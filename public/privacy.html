@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Wavelength</title>
+<link rel="stylesheet" href="/css/site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎧</text></svg>">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/">Wavelength</a>
+    <nav class="nav"><a href="/terms">Terms</a><a class="btn btn-primary btn-sm" href="/app">Start talking</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <article class="prose">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Template — have a lawyer review before you operate this publicly.</p>
+
+    <h2>What this deployment processes</h2>
+    <ul>
+      <li><strong>Connection data</strong> — network address, approximate country, browser and device type, and a random client identifier generated in your browser.</li>
+      <li><strong>Session metadata</strong> — when a conversation started and ended, and which anonymous identifiers were involved.</li>
+      <li><strong>Moderation signals</strong> — text and images are screened in transit; flagged items are recorded with a reason code.</li>
+      <li><strong>Local preferences</strong> — filters, interests, recent calls, blocked identifiers, and your age confirmation are stored in your own browser, not on the server.</li>
+    </ul>
+
+    <h2>What is never collected</h2>
+    <p>
+      No video. No real name, phone number, or date of birth. No precise location. <strong>No audio recordings
+      of any kind</strong> — voice travels directly between the two participants' browsers and does not pass
+      through the server.
+    </p>
+
+    <h2>Voice analysis</h2>
+    <p>
+      When the optional gender preference filter is enabled, short segments of your own microphone input are
+      analysed <em>inside your browser</em> to estimate voice pitch. Only the resulting one-word estimate is
+      sent with a match request. The audio itself never leaves your device and is not stored anywhere.
+    </p>
+
+    <h2>Retention</h2>
+    <ul>
+      <li>Session metadata — kept only while the service is running; nothing is written to disk in this build.</li>
+      <li>Moderation flags — retained in memory, capped to the most recent entries.</li>
+      <li>Random text messages — relayed in memory, never stored.</li>
+      <li>Anything in your browser's local storage — until you clear it.</li>
+    </ul>
+    <p>
+      If you connect a database to this deployment, define concrete retention periods here and enforce them
+      in code.
+    </p>
+
+    <h2>Third parties</h2>
+    <p>
+      This build uses public STUN servers to help two browsers find each other, and optionally an image
+      moderation provider if an API key is configured. If you add analytics, advertising, hosting, email, or
+      payment providers, list every one of them here along with the country they process data in.
+    </p>
+
+    <h2>Your rights</h2>
+    <p>
+      Depending on where you live you may have the right to access, correct, delete, restrict, or port your
+      personal data, to object to processing, and to withdraw consent. Because the service requires no
+      account, the practical way to erase everything associated with you is to clear this site's data in your
+      browser. For anything else, contact the operator.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      The service is not directed at and may not be used by anyone under 18. Data suggesting an underage user
+      is used solely to remove that user from the platform.
+    </p>
+
+    <h2>Contact</h2>
+    <p>Insert the data controller's legal name, address, and contact address for this deployment.</p>
+  </article>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap"><div class="footer-bottom"><span>© 2026 Wavelength.</span><span><a href="/">Home</a></span></div></div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "appId": "live.wavelength.app",
+  "appName": "Wavelength",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false,
+    "backgroundColor": "#070b14"
+  },
+  "server": {
+    "iosScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "backgroundColor": "#070b14",
+      "showSpinner": false,
+      "launchAutoHide": true
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "wavelength",
+  "version": "1.0.0",
+  "description": "Anonymous voice-first random chat — talk to strangers by voice or text, no signup, no camera.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "build:native": "node scripts/build-native.mjs",
+    "ios:sync": "npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
+    "express": "^4.19.2",
+    "mongodb": "^7.5.0",
+    "socket.io": "^4.7.5"
+  }
+}

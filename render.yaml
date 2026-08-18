@@ -1,0 +1,47 @@
+# Render Blueprint.
+#
+# Point Render at this repo and it reads this file instead of asking you to fill
+# in a form. Secrets are marked sync:false — Render prompts for them at deploy
+# time and stores them itself, so nothing sensitive is committed here.
+
+services:
+  - type: web
+    name: wavelength
+    runtime: node
+    plan: free
+    # Health checks let Render restart a wedged process instead of serving a
+    # dead one. The route already exists in server.js.
+    healthCheckPath: /healthz
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # Atlas connection string. Set this in the Render dashboard — never here.
+      # Without it the server still boots but silently falls back to in-memory
+      # storage, so friends, blocks, and reports vanish on every restart or
+      # redeploy. Check the boot log after the first deploy.
+      - key: MONGODB_URI
+        sync: false
+
+      - key: MONGODB_DB
+        value: wavelength
+
+      # TURN relay. Optional to boot, but roughly 10-20% of calls fail without
+      # it, and mobile carrier NAT is the worst case — which is most phones.
+      - key: TURN_URL
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+
+      # Optional: enables OpenAI image moderation on top of local screening.
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # Optional: guards GET /api/moderation/reports. Unset means that route
+      # returns 404, which is the safe default.
+      - key: MODERATION_TOKEN
+        sync: false

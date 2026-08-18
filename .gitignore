@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.local
+www/
+ios/App/App/public/
+ios/App/Pods/
+ios/DerivedData/
