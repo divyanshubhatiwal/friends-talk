@@ -45,7 +45,6 @@
   let localStream = null;
   let audioCtx = null;
   let analyser = null;
-  let vizRaf = null;
   let timerId = null;
   let pendingCandidates = [];
 
@@ -437,26 +436,101 @@
     tick();
   }
 
-  // Autocorrelation pitch detection — enough for a coarse male/female split.
+  /**
+   * Autocorrelation pitch detection — enough for a coarse male/female split.
+   *
+   * Done naively this is the most expensive thing on the main thread: every lag
+   * from 60 Hz to 400 Hz correlated across the full 2048-sample window is well
+   * over a million multiply-adds, repeated every 120 ms while the analyser is
+   * also feeding the visualiser.
+   *
+   * Two changes make it cheap without changing the answer. The window is halved
+   * — one period of even a low voice fits comfortably in 1024 samples — and the
+   * lag search runs coarse then refines around the winner, instead of walking
+   * every lag at full resolution. That is roughly an eightfold reduction, and
+   * the result still lands in the right half of the male/female split.
+   */
   function detectPitch(buf, sampleRate) {
+    const n = Math.min(buf.length, 1024);
+
     let rms = 0;
-    for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
-    rms = Math.sqrt(rms / buf.length);
-    if (rms < 0.01) return -1; // silence
+    for (let i = 0; i < n; i++) rms += buf[i] * buf[i];
+    if (Math.sqrt(rms / n) < 0.01) return -1; // silence
 
     const minLag = Math.floor(sampleRate / 400);
-    const maxLag = Math.floor(sampleRate / 60);
+    const maxLag = Math.min(Math.floor(sampleRate / 60), n - 1);
+
+    const correlate = (lag) => {
+      let sum = 0;
+      const end = n - lag;
+      for (let i = 0; i < end; i++) sum += buf[i] * buf[i + lag];
+      return sum / end;
+    };
+
     let bestLag = -1;
     let bestCorr = 0;
-
-    for (let lag = minLag; lag <= maxLag; lag++) {
-      let corr = 0;
-      for (let i = 0; i < buf.length - lag; i++) corr += buf[i] * buf[i + lag];
-      corr /= buf.length - lag;
+    const COARSE = 4;
+    for (let lag = minLag; lag <= maxLag; lag += COARSE) {
+      const corr = correlate(lag);
       if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
     }
-    return bestLag > 0 ? sampleRate / bestLag : -1;
+    if (bestLag < 0) return -1;
+
+    // Refine within the coarse step that won.
+    const from = Math.max(minLag, bestLag - COARSE);
+    const to = Math.min(maxLag, bestLag + COARSE);
+    for (let lag = from; lag <= to; lag++) {
+      const corr = correlate(lag);
+      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+    }
+    return sampleRate / bestLag;
   }
+
+  // --------------------------------------------------------- frame driver
+
+  /**
+   * One requestAnimationFrame loop for the whole app.
+   *
+   * The visualiser and the speaking indicator both want per-frame work, and
+   * during a group call both were running their own loop. Two loops means two
+   * callbacks, two chances to overrun the frame budget, and no shared control
+   * over when to stop. This is one loop with a task set.
+   *
+   * It also stops entirely when the tab is hidden. A backgrounded tab still
+   * gets throttled callbacks, and doing audio analysis for a visualiser nobody
+   * can see is pure waste on a phone battery.
+   */
+  const frameTasks = new Set();
+  let frameHandle = null;
+
+  function startFrames() {
+    if (frameHandle !== null || document.hidden || frameTasks.size === 0) return;
+    const loop = () => {
+      for (const task of frameTasks) task();
+      frameHandle = requestAnimationFrame(loop);
+    };
+    frameHandle = requestAnimationFrame(loop);
+  }
+
+  function stopFrames() {
+    if (frameHandle !== null) cancelAnimationFrame(frameHandle);
+    frameHandle = null;
+  }
+
+  function addFrameTask(task) {
+    frameTasks.add(task);
+    startFrames();
+  }
+
+  function removeFrameTask(task) {
+    frameTasks.delete(task);
+    if (frameTasks.size === 0) stopFrames();
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopFrames();
+    else startFrames();
+  });
 
   // ------------------------------------------------------------ visualiser
 
@@ -464,31 +538,40 @@
     for (let i = 0; i < 44; i++) el.viz.appendChild(document.createElement('i'));
   }
 
+  let vizBars = null;
+  let vizData = null;
+
+  /**
+   * Drives the bars with transform rather than height.
+   *
+   * Writing `height` on 44 elements every frame forces the browser to lay the
+   * row out 44 times a second; `transform: scaleY()` is handled by the
+   * compositor and touches neither layout nor paint. Same picture, a fraction
+   * of the work — which is what a mid-range phone actually notices.
+   */
+  function vizFrame() {
+    if (!analyser) return;
+    analyser.getByteFrequencyData(vizData);
+    const step = Math.floor(vizData.length / vizBars.length) || 1;
+    for (let i = 0; i < vizBars.length; i++) {
+      const v = vizData[i * step] / 255;
+      // Never fully collapse — a zero-scale bar disappears rather than resting.
+      vizBars[i].style.transform = `scaleY(${(0.08 + v * 0.92).toFixed(3)})`;
+    }
+  }
+
   function runViz() {
     if (!analyser) return;
-    const bars = el.viz.querySelectorAll('i');
-    const data = new Uint8Array(analyser.frequencyBinCount);
-
-    const frame = () => {
-      analyser.getByteFrequencyData(data);
-      const step = Math.floor(data.length / bars.length);
-      bars.forEach((bar, i) => {
-        const v = data[i * step] / 255;
-        bar.style.height = Math.max(6, v * 60) + 'px';
-        bar.style.opacity = String(0.22 + v * 0.78);
-      });
-      vizRaf = requestAnimationFrame(frame);
-    };
-    frame();
+    vizBars = [...el.viz.querySelectorAll('i')];
+    vizData = new Uint8Array(analyser.frequencyBinCount);
+    el.viz.classList.add('is-live');
+    addFrameTask(vizFrame);
   }
 
   function stopViz() {
-    if (vizRaf) cancelAnimationFrame(vizRaf);
-    vizRaf = null;
-    el.viz.querySelectorAll('i').forEach((bar) => {
-      bar.style.height = '6px';
-      bar.style.opacity = '0.22';
-    });
+    removeFrameTask(vizFrame);
+    el.viz.classList.remove('is-live');
+    for (const bar of el.viz.querySelectorAll('i')) bar.style.transform = 'scaleY(0.08)';
   }
 
   // ------------------------------------------------------------- captions
@@ -653,7 +736,6 @@
    * connection is torn down — the rest of the room carries on untouched.
    */
   const groupPeers = new Map();
-  let speakingRaf = null;
 
   async function startGroup() {
     try {
@@ -765,8 +847,7 @@
 
   function stopGroup() {
     for (const id of [...groupPeers.keys()]) removeGroupPeer(id);
-    if (speakingRaf) cancelAnimationFrame(speakingRaf);
-    speakingRaf = null;
+    removeFrameTask(speakingFrame);
     el.roster.hidden = true;
     state.groupRoom = null;
   }
@@ -826,34 +907,43 @@
    * genuinely hard to follow. Sampling each remote stream's level and lighting
    * up the matching row is the whole affordance.
    */
-  function runSpeakingDetection() {
-    if (speakingRaf) return;
-    const data = new Uint8Array(256);
+  const speakingData = new Uint8Array(256);
+  let lastSpeakingCheck = 0;
 
-    const frame = () => {
-      let changed = false;
-      for (const [id, entry] of groupPeers) {
-        if (!entry.analyser) continue;
-        entry.analyser.getByteFrequencyData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) sum += data[i];
-        const speaking = sum / data.length > 8;
-        if (speaking !== entry.speaking) {
-          entry.speaking = speaking;
-          const row = el.rosterList.querySelector(`[data-peer="${id}"]`);
-          if (row) {
-            row.classList.toggle('speaking', speaking);
-            const tail = row.querySelector('.state');
-            if (tail) tail.textContent = speaking ? 'speaking' : '';
-          } else {
-            changed = true;
-          }
-        }
+  /**
+   * Lights up whoever is talking.
+   *
+   * Sampled at roughly 12 Hz rather than every frame. Nobody can perceive a
+   * speaking indicator updating faster than that, and at 60 Hz this would be
+   * four extra FFT reads per frame in a five-person room, on the same thread
+   * that has to keep the audio graph fed.
+   */
+  function speakingFrame() {
+    const now = performance.now();
+    if (now - lastSpeakingCheck < 80) return;
+    lastSpeakingCheck = now;
+
+    for (const [id, entry] of groupPeers) {
+      if (!entry.analyser) continue;
+      entry.analyser.getByteFrequencyData(speakingData);
+      let sum = 0;
+      for (let i = 0; i < speakingData.length; i++) sum += speakingData[i];
+      const speaking = sum / speakingData.length > 8;
+      if (speaking === entry.speaking) continue;
+
+      entry.speaking = speaking;
+      // Touch only the one row that changed, never the whole list.
+      const row = el.rosterList.querySelector(`[data-peer="${id}"]`);
+      if (row) {
+        row.classList.toggle('speaking', speaking);
+        const tail = row.querySelector('.state');
+        if (tail) tail.textContent = speaking ? 'speaking' : '';
       }
-      if (changed) renderRoster();
-      speakingRaf = requestAnimationFrame(frame);
-    };
-    frame();
+    }
+  }
+
+  function runSpeakingDetection() {
+    addFrameTask(speakingFrame);
   }
 
   socket.on('group:joined', async (payload) => {
@@ -1100,6 +1190,17 @@
 
   // ----------------------------------------------------------------- chat UI
 
+  // A long session otherwise grows the log without limit, and every new message
+  // makes the browser lay out an ever-taller column. Old messages scroll out of
+  // reach anyway, so the oldest are dropped once the log gets long.
+  const MAX_CHAT_NODES = 150;
+
+  function trimChatLog() {
+    while (el.chatLog.childElementCount > MAX_CHAT_NODES) {
+      el.chatLog.firstElementChild.remove();
+    }
+  }
+
   function addMessage({ from, text, dataUrl }) {
     el.chatLog.querySelector('.chat-empty')?.remove();
     const node = document.createElement('div');
@@ -1113,6 +1214,7 @@
       node.textContent = text;
     }
     el.chatLog.appendChild(node);
+    trimChatLog();
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
 
@@ -1407,8 +1509,48 @@
 
   // ------------------------------------------------------------- panel toggles
 
-  $('toggle-left').addEventListener('click', () => $('pane-left').classList.toggle('is-open'));
-  $('toggle-right').addEventListener('click', () => $('pane-right').classList.toggle('is-open'));
+  // On phones the panes are bottom sheets. Only one may be open at a time —
+  // two stacked sheets would bury the call entirely — and the scrim behind
+  // them both dims the stage and gives a large, obvious way to dismiss.
+  const scrim = $('sheet-scrim');
+  const paneLeft = $('pane-left');
+  const paneRight = $('pane-right');
+
+  function closeSheets() {
+    paneLeft.classList.remove('is-open');
+    paneRight.classList.remove('is-open');
+    scrim.classList.remove('is-open');
+    // Kept out of the accessibility tree while invisible.
+    scrim.hidden = true;
+  }
+
+  function toggleSheet(pane) {
+    const opening = !pane.classList.contains('is-open');
+    paneLeft.classList.remove('is-open');
+    paneRight.classList.remove('is-open');
+
+    if (opening) {
+      pane.classList.add('is-open');
+      scrim.hidden = false;
+      // Next frame, so the transition has a start state to animate from.
+      requestAnimationFrame(() => scrim.classList.add('is-open'));
+    } else {
+      closeSheets();
+    }
+  }
+
+  $('toggle-left').addEventListener('click', () => toggleSheet(paneLeft));
+  $('toggle-right').addEventListener('click', () => toggleSheet(paneRight));
+  scrim.addEventListener('click', closeSheets);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeSheets();
+  });
+
+  // Returning to a desktop width should not leave a half-open sheet behind.
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 760) closeSheets();
+  });
 
   // Sidebar tabs — filters, recent calls, and friends share one column instead
   // of stacking into a page-length scroll.

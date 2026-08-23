@@ -15,11 +15,32 @@
 
 body.app-body {
   height: 100vh;
+  /* dvh follows the mobile browser chrome as it hides and shows; vh does not,
+     which is what leaves a fixed composer stranded under Safari's toolbar. */
   height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  /* Stops the whole page rubber-banding when a scrollable panel hits its end. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Momentum scrolling inside panes, and no scroll chaining out of them. */
+.pane, .panel, .chat-log, .stage-pane {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Keyboard users get a visible focus ring; mouse users do not, which is what
+   :focus-visible is for. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 /* ------------------------------------------------------------------ topbar */
@@ -294,15 +315,23 @@ select[multiple] option { padding: 5px 7px; border-radius: 5px; }
   gap: 4px;
   height: 64px;
   width: min(360px, 80%);
+  /* Isolates the bars so their animation cannot invalidate layout elsewhere. */
+  contain: strict;
 }
+/* Bars are laid out once at full height and scaled by transform. Animating
+   transform stays on the compositor; animating height would re-run layout for
+   the whole row on every frame. */
 .viz i {
   width: 4px;
-  height: 6px;
+  height: 56px;
   border-radius: 3px;
   background: var(--accent);
-  opacity: 0.22;
-  transition: height 0.1s ease-out, opacity 0.1s ease-out;
+  opacity: 0.5;
+  transform: scaleY(0.08);
+  transform-origin: center bottom;
+  will-change: transform;
 }
+.viz.is-live i { opacity: 0.85; }
 
 .status-line {
   margin: 0;
@@ -682,33 +711,133 @@ dialog.modal::backdrop { background: rgba(3, 6, 12, 0.78); backdrop-filter: blur
 
 /* -------------------------------------------------------------- responsive */
 
+/* ------------------------------------------------------------------- touch */
+
+/* Hover styling is desktop-only on purpose. A touch browser applies :hover on
+   tap and leaves it applied until you tap elsewhere, so every button a phone
+   user pressed would stay lit. Wrapping the rules in a hover query removes the
+   whole class of problem rather than patching each button. */
+@media (hover: none) {
+  .ctrl:hover, .icon-btn:hover, .bar-btn:hover, .tab:hover,
+  .seg:hover, .menu button:hover, .board button:hover {
+    background: inherit;
+    color: inherit;
+    border-color: inherit;
+  }
+  .card:hover, .call-btn:hover { transform: none; }
+}
+
+/* Feedback for a press, which is what touch actually needs instead of hover. */
+.ctrl:active, .icon-btn:active, .seg:active, .tab:active { opacity: 0.65; }
+
+/* --------------------------------------------------------------- responsive */
+
 @media (max-width: 1060px) {
   .app-main { grid-template-columns: var(--pane) minmax(0, 1fr); }
   .bar-btn#toggle-right { display: block; }
-  .pane-right {
-    position: fixed;
-    inset: var(--bar) 0 0 0;
-    z-index: 40;
-    display: none;
-    border-left: 0;
-  }
+  .pane-right { position: fixed; inset: var(--bar) 0 0 0; z-index: 45; display: none; border-left: 0; }
   .pane-right.is-open { display: flex; }
 }
 
 @media (max-width: 760px) {
+  :root { --bar: 56px; }
+
   .app-main { grid-template-columns: minmax(0, 1fr); }
   .bar-btn { display: block; }
-  .pane-left {
-    position: fixed;
-    inset: var(--bar) 0 0 0;
-    z-index: 40;
-    display: none;
-    border-right: 0;
-  }
-  .pane-left.is-open { display: flex; }
+  .app-bar { gap: 8px; padding: 0 12px; }
   .app-bar .brand span { display: none; }
-  .stage { gap: 20px; padding: 24px 18px; }
-  .call-btn { width: 104px; height: 104px; }
+  .presence { padding: 5px 10px; font-size: 0.78rem; }
+
+  /* Panels come up from the bottom rather than covering the whole screen. A
+     sheet keeps the call visible behind it, so you never lose your place in a
+     conversation to check a filter. */
+  .pane-left, .pane-right {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    z-index: 45;
+    display: flex;
+    max-height: 78vh;
+    max-height: 78dvh;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 20px 20px 0 0;
+    background: var(--bg-raised);
+    box-shadow: 0 -18px 50px -20px rgba(0, 0, 0, 0.75);
+    transform: translateY(101%);
+    transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pane-left.is-open, .pane-right.is-open { transform: translateY(0); }
+
+  /* Grab handle, so the sheet reads as draggable-looking and dismissible. */
+  .pane-left::before, .pane-right::before {
+    content: '';
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 9px auto 3px;
+    border-radius: 2px;
+    background: var(--border-bright);
+    flex: none;
+  }
+
+  #sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    background: rgba(3, 6, 12, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.24s ease;
+  }
+  #sheet-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+  .stage { gap: 18px; padding: 20px 16px 28px; justify-content: flex-start; padding-top: 28px; }
+  .call-btn { width: 100px; height: 100px; }
+  .call-icon { width: 23px; height: 23px; }
+  .viz { height: 52px; width: 100%; }
+  .viz i { height: 46px; }
+  .roster, .captions { width: 100%; }
+
+  /* 44px is the smallest reliable touch target; the desktop sizes are smaller
+     because a mouse is precise and a fingertip is not. */
+  .ctrl { width: 46px; height: 46px; padding: 12px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .controls { gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .seg { padding: 13px 2px; min-height: 44px; }
+  .tab { padding: 12px 6px; min-height: 44px; }
+  /* These open the sheets — the most-tapped controls on a phone, so they get
+     the full target even though the icon inside stays visually small. */
+  .bar-btn { width: 44px; height: 44px; padding: 11px; }
+
+  .composer { padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  /* Anything under 16px makes iOS Safari zoom the page when the field focuses. */
+  .composer input[type="text"] { font-size: 16px; }
+  input[type="text"], select { font-size: 16px; }
+
+  .msg { max-width: 90%; }
+  .board { grid-template-columns: repeat(3, 58px); }
+  .board button { width: 58px; height: 58px; }
+  .toast-host { bottom: calc(16px + env(safe-area-inset-bottom)); width: calc(100% - 32px); }
+  .toast { text-align: center; }
+}
+
+@media (max-width: 380px) {
+  .seg { font-size: 0.74rem; }
+  .seg svg { display: none; }
+  .call-btn { width: 92px; height: 92px; }
+}
+
+/* Landscape on a phone is short, not narrow — the tall stack would not fit. */
+@media (max-height: 460px) and (orientation: landscape) {
+  .stage { flex-direction: row; flex-wrap: wrap; gap: 14px; padding: 14px; }
+  .viz { height: 40px; width: 200px; }
+  .viz i { height: 34px; }
+  .call-btn { width: 76px; height: 76px; }
+  .call-btn .cap { font-size: 0.64rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
