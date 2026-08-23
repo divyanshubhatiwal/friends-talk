@@ -1,4 +1,4 @@
-/* Wavelength client.
+/* Friends Talk client.
  *
  * Responsibilities, in order of importance:
  *   1. hold the WebRTC peer connection for the call
@@ -16,7 +16,7 @@
 
   // Empty serverUrl means same origin, which is what the web build wants.
   // Native builds set it, because capacitor://localhost is not a server.
-  const socket = io(window.WAVELENGTH?.serverUrl || undefined, {
+  const socket = io(window.FRIENDSTALK?.serverUrl || undefined, {
     transports: ['websocket', 'polling']
   });
 
@@ -31,7 +31,11 @@
     autoCall: false,
     startedAt: 0,
     interests: [],
-    myGender: 'unknown'
+    myGender: 'unknown',
+    voiceFeatures: false,
+    captions: false,
+    language: 'en',
+    translateTo: null
   };
 
   let pc = null;
@@ -42,21 +46,45 @@
   let timerId = null;
   let pendingCandidates = [];
 
+  const PREFIX = 'ft:';
+  const LEGACY_PREFIX = 'wl:';
+
+  /**
+   * Carries settings over from the old key prefix, once.
+   *
+   * The client id matters most: friendships and blocks are stored server-side
+   * against it, so generating a fresh one would silently disconnect an existing
+   * user from their own friends list. Everything else is convenience.
+   */
+  function migrateLegacyKeys() {
+    if (localStorage.getItem(PREFIX + 'migrated')) return;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(LEGACY_PREFIX)) continue;
+      const moved = PREFIX + key.slice(LEGACY_PREFIX.length);
+      if (localStorage.getItem(moved) === null) {
+        localStorage.setItem(moved, localStorage.getItem(key));
+      }
+    }
+    localStorage.setItem(PREFIX + 'migrated', '1');
+  }
+  migrateLegacyKeys();
+
   const store = {
     get clientId() {
-      let id = localStorage.getItem('wl:clientId');
+      let id = localStorage.getItem(PREFIX + 'clientId');
       if (!id) {
         id = 'c-' + (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now());
-        localStorage.setItem('wl:clientId', id);
+        localStorage.setItem(PREFIX + 'clientId', id);
       }
       return id;
     },
     read(key, fallback) {
-      try { return JSON.parse(localStorage.getItem('wl:' + key)) ?? fallback; }
+      try { return JSON.parse(localStorage.getItem(PREFIX + key)) ?? fallback; }
       catch { return fallback; }
     },
     write(key, value) {
-      localStorage.setItem('wl:' + key, JSON.stringify(value));
+      localStorage.setItem(PREFIX + key, JSON.stringify(value));
     }
   };
 
@@ -72,7 +100,8 @@
     friend: $('btn-friend'), report: $('btn-report'), block: $('btn-block'),
     chatLog: $('chat-log'), chatInput: $('chat-input'), send: $('btn-send'),
     image: $('btn-image'), file: $('file-input'), typing: $('typing'),
-    mode: $('mode'), myCountry: $('my-country'), targets: $('target-countries'),
+    myCountry: $('my-country'), targets: $('target-countries'),
+    controls: $('controls'), moreBtn: $('btn-more'), moreMenu: $('more-menu'),
     interestInput: $('interest-input'), interestTags: $('interest-tags'),
     autoCall: $('auto-call'), premium: $('premium'), genderPref: $('gender-pref'),
     genderWrap: $('gender-pref-wrap'), history: $('history-list'), friends: $('friends-list'),
@@ -81,8 +110,38 @@
     reportModal: $('report-modal'), reportReason: $('report-reason'),
     reportSend: $('report-send'), reportCancel: $('report-cancel'),
     board: $('board'), gameWrap: $('game-wrap'), gameStatus: $('game-status'),
-    toasts: $('toasts')
+    toasts: $('toasts'),
+    queueNote: $('queue-note'), notify: $('notify-on'),
+    captionSettings: $('caption-settings'), captionsOn: $('captions-on'),
+    captionLangs: $('caption-langs'), myLanguage: $('my-language'),
+    translateTo: $('translate-to'), captionBar: $('caption-bar'),
+    captionThem: $('caption-them'), captionMe: $('caption-me')
   };
+
+  // The mode picker is a segmented control rather than a <select>, because a
+  // binary choice should not be a dropdown. This shim lets the rest of the file
+  // keep reading and writing `el.mode.value` as though nothing changed.
+  const modeSeg = $('mode-seg');
+
+  function setMode(next) {
+    for (const seg of modeSeg.querySelectorAll('.seg')) {
+      const on = seg.dataset.mode === next;
+      seg.classList.toggle('is-active', on);
+      seg.setAttribute('aria-checked', String(on));
+    }
+    state.mode = next;
+    store.write('mode', next);
+  }
+
+  el.mode = {
+    get value() { return modeSeg.querySelector('.seg.is-active')?.dataset.mode || 'voice'; },
+    set value(next) { setMode(next); }
+  };
+
+  modeSeg.addEventListener('click', (event) => {
+    const seg = event.target.closest('.seg');
+    if (seg) setMode(seg.dataset.mode);
+  });
 
   function toast(text, kind = '') {
     const node = document.createElement('div');
@@ -194,7 +253,7 @@
   });
 
   el.premium.addEventListener('change', () => {
-    el.genderWrap.style.display = el.premium.checked ? 'block' : 'none';
+    el.genderWrap.hidden = !el.premium.checked;
     store.write('premium', el.premium.checked);
   });
 
@@ -203,15 +262,44 @@
     store.write('autoCall', state.autoCall);
   });
 
+  el.captionsOn.addEventListener('change', () => {
+    state.captions = el.captionsOn.checked;
+    store.write('captions', state.captions);
+    el.captionLangs.hidden = !state.captions;
+
+    // Toggling mid-call takes effect immediately rather than next call.
+    if (state.captions && state.phase !== 'idle' && state.mode === 'voice') startCaptions();
+    if (!state.captions) stopCaptions();
+  });
+
+  el.myLanguage.addEventListener('change', () => {
+    state.language = el.myLanguage.value;
+    store.write('language', state.language);
+  });
+
+  el.translateTo.addEventListener('change', () => {
+    state.translateTo = el.translateTo.value || null;
+    store.write('translateTo', state.translateTo || '');
+  });
+
+  el.notify.addEventListener('change', async () => {
+    const on = el.notify.checked;
+    // Browsers only grant this from a user gesture, which a change event is.
+    if (on && window.Notification && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+    if (on && window.Notification && Notification.permission === 'denied') {
+      toast('Notifications are blocked in your browser settings', 'err');
+    }
+    store.write('notify', on);
+    socket.emit('notify', { on });
+  });
+
   el.myCountry.addEventListener('change', () => {
     store.write('country', el.myCountry.value);
     announce();
   });
 
-  el.mode.addEventListener('change', () => {
-    state.mode = el.mode.value;
-    store.write('mode', state.mode);
-  });
 
   // ------------------------------------------------------------ call history
 
@@ -222,39 +310,62 @@
     renderHistory();
   }
 
+  /** Shared row builder so the two lists cannot drift apart visually. */
+  function listRow(name, sub) {
+    const row = document.createElement('div');
+    row.className = 'list-item';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = (name || '?').charAt(0);
+
+    const body = document.createElement('div');
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = name;
+    body.appendChild(nm);
+
+    if (sub) {
+      const meta = document.createElement('div');
+      meta.className = 'sub';
+      meta.textContent = sub;
+      body.appendChild(meta);
+    }
+
+    row.append(avatar, body);
+    return row;
+  }
+
+  function renderEmpty(target, message) {
+    target.innerHTML = '';
+    const note = document.createElement('p');
+    note.className = 'empty';
+    note.textContent = message;
+    target.appendChild(note);
+  }
+
   function renderHistory() {
     const list = store.read('history', []);
     if (!list.length) {
-      el.history.innerHTML = '<div class="empty">No calls yet.</div>';
+      renderEmpty(el.history, 'Your recent conversations will show up here.');
       return;
     }
     el.history.innerHTML = '';
     for (const item of list) {
-      const row = document.createElement('div');
-      row.className = 'list-item';
       const when = new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      row.innerHTML =
-        `<div><div class="nm"></div><div class="sub">${item.country} · ${when} · ${formatDuration(item.duration)}</div></div>`;
-      row.querySelector('.nm').textContent = item.name;
-      el.history.appendChild(row);
+      el.history.appendChild(
+        listRow(item.name, `${countryLabel(item.country)} · ${when} · ${formatDuration(item.duration)}`)
+      );
     }
   }
 
   function renderFriends(names) {
     if (!names || !names.length) {
-      el.friends.innerHTML = '<div class="empty">Add someone during a call.</div>';
+      renderEmpty(el.friends, 'Add someone during a call and they will appear here.');
       return;
     }
     el.friends.innerHTML = '';
-    for (const name of names) {
-      const row = document.createElement('div');
-      row.className = 'list-item';
-      const nm = document.createElement('div');
-      nm.className = 'nm';
-      nm.textContent = name;
-      row.appendChild(nm);
-      el.friends.appendChild(row);
-    }
+    for (const name of names) el.friends.appendChild(listRow(name, null));
   }
 
   function formatDuration(ms) {
@@ -338,7 +449,7 @@
   // ------------------------------------------------------------ visualiser
 
   function buildViz() {
-    for (let i = 0; i < 32; i++) el.viz.appendChild(document.createElement('i'));
+    for (let i = 0; i < 44; i++) el.viz.appendChild(document.createElement('i'));
   }
 
   function runViz() {
@@ -351,8 +462,8 @@
       const step = Math.floor(data.length / bars.length);
       bars.forEach((bar, i) => {
         const v = data[i * step] / 255;
-        bar.style.height = Math.max(8, v * 88) + 'px';
-        bar.style.opacity = String(0.3 + v * 0.7);
+        bar.style.height = Math.max(6, v * 60) + 'px';
+        bar.style.opacity = String(0.22 + v * 0.78);
       });
       vizRaf = requestAnimationFrame(frame);
     };
@@ -363,9 +474,79 @@
     if (vizRaf) cancelAnimationFrame(vizRaf);
     vizRaf = null;
     el.viz.querySelectorAll('i').forEach((bar) => {
-      bar.style.height = '8px';
-      bar.style.opacity = '0.35';
+      bar.style.height = '6px';
+      bar.style.opacity = '0.22';
     });
+  }
+
+  // ------------------------------------------------------------- captions
+
+  // Each clip is recorded as a self-contained file rather than a slice of a
+  // longer stream: a mid-stream WebM fragment has no header and cannot be
+  // decoded on its own, so the transcriber would reject it.
+  const CLIP_MS = 4000;
+  let clipTimer = null;
+
+  function fillLanguages(languages) {
+    const entries = Object.entries(languages);
+    if (!entries.length) return;
+    for (const [code, label] of entries) {
+      el.myLanguage.add(new Option(label, code));
+      el.translateTo.add(new Option(label, code));
+    }
+    el.myLanguage.value = store.read('language', guessLanguage(languages));
+    el.translateTo.value = store.read('translateTo', '') || '';
+  }
+
+  function guessLanguage(languages) {
+    const code = (navigator.language || 'en').split('-')[0].toLowerCase();
+    return languages[code] ? code : 'en';
+  }
+
+  function startCaptions() {
+    if (clipTimer || !localStream || !state.captions) return;
+
+    // Ogg first: it is an Opus container the speech providers accept as-is.
+    // Chrome only offers WebM, which the server relabels — same Opus payload,
+    // different wrapper — so both paths work.
+    const mime = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+      .find((type) => window.MediaRecorder?.isTypeSupported(type));
+    if (!mime) {
+      toast('This browser cannot record audio for captions', 'err');
+      return;
+    }
+
+    const captureOnce = () => {
+      if (!localStream || !state.captions) return;
+      let recorder;
+      try {
+        recorder = new MediaRecorder(localStream, { mimeType: mime });
+      } catch {
+        return;
+      }
+      const parts = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) parts.push(event.data); };
+      recorder.onstop = async () => {
+        const blob = new Blob(parts, { type: mime });
+        // Anything this small is silence or a truncated clip.
+        if (blob.size < 2000) return;
+        socket.emit('voice:clip', { chunk: await blob.arrayBuffer(), mimeType: mime });
+      };
+      recorder.start();
+      setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, CLIP_MS);
+    };
+
+    captureOnce();
+    clipTimer = setInterval(captureOnce, CLIP_MS + 400);
+    el.captionBar.hidden = false;
+  }
+
+  function stopCaptions() {
+    if (clipTimer) clearInterval(clipTimer);
+    clipTimer = null;
+    el.captionBar.hidden = true;
+    el.captionThem.textContent = '';
+    el.captionMe.textContent = '';
   }
 
   // --------------------------------------------------------------- WebRTC
@@ -476,7 +657,10 @@
       interests: state.interests,
       premium: el.premium.checked,
       genderPreference: el.genderPref.value,
-      gender: state.myGender
+      gender: state.myGender,
+      captions: state.captions,
+      language: state.language,
+      translateTo: state.translateTo
     });
   }
 
@@ -491,12 +675,14 @@
     }
     closePeer();
     stopViz();
+    stopCaptions();
     stopTimer();
+    el.queueNote.hidden = true;
     state.phase = 'idle';
     state.roomId = null;
     state.partner = null;
     el.partnerCard.classList.remove('show');
-    el.gameWrap.style.display = 'none';
+    el.gameWrap.hidden = true;
     paintPhase();
 
     if (reason === 'skipped') systemMessage('You skipped to the next person.');
@@ -533,13 +719,12 @@
       live ? 'Hang up the call' : searching ? 'Cancel searching' : 'Call a stranger'
     );
 
-    el.mute.disabled = !live || state.mode !== 'voice';
-    el.next.disabled = !live;
-    el.game.disabled = !live;
-    el.friend.disabled = !live;
-    el.report.disabled = !live;
-    el.block.disabled = !live;
-    el.voice.disabled = !(live && state.mode === 'text');
+    // An idle screen shows no call controls at all. Disabled buttons are just
+    // clutter that tells you what you cannot do.
+    el.controls.hidden = !live;
+    el.mute.hidden = state.mode !== 'voice';
+    el.voice.hidden = state.mode !== 'text';
+    if (!live) closeMoreMenu();
 
     el.chatInput.disabled = !live;
     el.send.disabled = !live;
@@ -571,7 +756,10 @@
     state.muted = !state.muted;
     for (const track of localStream.getAudioTracks()) track.enabled = !state.muted;
     el.mute.classList.toggle('active', state.muted);
-    el.mute.textContent = state.muted ? 'Unmute' : 'Mute';
+    // Icon-only button, so the state has to live in the label, not the text.
+    const label = state.muted ? 'Unmute' : 'Mute';
+    el.mute.title = label;
+    el.mute.setAttribute('aria-label', label);
   });
 
   el.voice.addEventListener('click', async () => {
@@ -590,11 +778,15 @@
   });
 
   el.block.addEventListener('click', () => {
+    closeMoreMenu();
     socket.emit('block');
     toast('Blocked — you will not be matched again', 'ok');
   });
 
-  el.report.addEventListener('click', () => el.reportModal.showModal());
+  el.report.addEventListener('click', () => {
+    closeMoreMenu();
+    el.reportModal.showModal();
+  });
   el.reportCancel.addEventListener('click', () => el.reportModal.close());
   el.reportSend.addEventListener('click', () => {
     socket.emit('report', { reason: el.reportReason.value });
@@ -604,6 +796,7 @@
   // ----------------------------------------------------------------- chat UI
 
   function addMessage({ from, text, dataUrl }) {
+    el.chatLog.querySelector('.chat-empty')?.remove();
     const node = document.createElement('div');
     node.className = 'msg ' + from;
     if (dataUrl) {
@@ -659,7 +852,7 @@
   // -------------------------------------------------------------------- game
 
   function renderBoard(payload) {
-    el.gameWrap.style.display = 'block';
+    el.gameWrap.hidden = false;
     el.board.innerHTML = '';
     payload.board.forEach((cell, index) => {
       const btn = document.createElement('button');
@@ -688,6 +881,11 @@
   socket.on('ready', (payload) => {
     state.iceServers = payload.iceServers || [];
     paintStats(payload.stats);
+
+    // Caption controls only exist if the server can actually transcribe.
+    state.voiceFeatures = payload.voiceFeatures === true;
+    el.captionSettings.hidden = !state.voiceFeatures;
+    if (state.voiceFeatures) fillLanguages(payload.languages || {});
   });
 
   socket.on('hello:ok', (payload) => {
@@ -709,8 +907,33 @@
     el.calls.textContent = s.inCall.toLocaleString();
   }
 
-  socket.on('waiting', () => {
-    setStatus('Waiting for a match…');
+  socket.on('waiting', (payload = {}) => {
+    // A bare spinner reads as "broken" on a quiet server. Say what is actually
+    // happening: how many people are queued, and which filter was relaxed.
+    const others = Math.max(0, (payload.queued || 1) - 1);
+    setStatus(others > 0
+      ? `Looking… ${others} other ${others === 1 ? 'person is' : 'people are'} waiting too`
+      : 'Looking for someone…');
+
+    const seconds = Math.floor((payload.waitedMs || 0) / 1000);
+    const parts = [];
+    if (seconds >= 5) parts.push(`waiting ${seconds}s`);
+    if (payload.online) parts.push(`${payload.online} online`);
+
+    let note = parts.join(' · ');
+    if (payload.relaxedLabel) {
+      note += `${note ? ' — ' : ''}<span class="relaxed">widened search, ignoring your ${payload.relaxedLabel}</span>`;
+    }
+    el.queueNote.innerHTML = note;
+    el.queueNote.hidden = !note;
+  });
+
+  socket.on('someone:waiting', () => {
+    if (state.phase !== 'idle') return;
+    toast('Someone is looking for a call');
+    if (window.Notification?.permission === 'granted') {
+      new Notification('Friends Talk', { body: 'Someone is looking for a call right now.' });
+    }
   });
 
   socket.on('matched', async (payload) => {
@@ -731,9 +954,12 @@
     startTimer();
     systemMessage(`You are now talking with ${payload.partner.name}.`);
 
+    el.queueNote.hidden = true;
+
     if (state.mode === 'voice') {
       setStatus('Connecting audio…');
       runViz();
+      if (state.captions) startCaptions();
       if (payload.initiator) await startOffer();
     } else {
       setStatus(`Text chat with <strong>${escapeHtml(payload.partner.name)}</strong>`);
@@ -775,8 +1001,28 @@
     state.mode = 'voice';
     paintPhase();
     runViz();
+    if (state.captions) startCaptions();
     setStatus('Switching to voice…');
     if (initiator) await startOffer();
+  });
+
+  socket.on('caption', (payload = {}) => {
+    const target = payload.from === 'me' ? el.captionMe : el.captionThem;
+    target.textContent = payload.from === 'me' ? `You: ${payload.text}` : payload.text;
+    if (payload.original) {
+      const note = document.createElement('span');
+      note.className = 'lang-note';
+      note.textContent = `(${payload.original})`;
+      target.appendChild(note);
+    }
+  });
+
+  socket.on('voice:warning', ({ reason, strikes, limit }) => {
+    toast(`Warning ${strikes}/${limit}: ${humanReason(reason)} is not allowed`, 'err');
+    addMessage({
+      from: 'warn',
+      text: `That was flagged as ${humanReason(reason)}. Warning ${strikes} of ${limit}.`
+    });
   });
 
   socket.on('game:state', renderBoard);
@@ -853,8 +1099,43 @@
 
   // ------------------------------------------------------------- panel toggles
 
-  $('toggle-left').addEventListener('click', () => $('pane-left').classList.toggle('mobile-open'));
-  $('toggle-right').addEventListener('click', () => $('pane-right').classList.toggle('mobile-open'));
+  $('toggle-left').addEventListener('click', () => $('pane-left').classList.toggle('is-open'));
+  $('toggle-right').addEventListener('click', () => $('pane-right').classList.toggle('is-open'));
+
+  // Sidebar tabs — filters, recent calls, and friends share one column instead
+  // of stacking into a page-length scroll.
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.addEventListener('click', () => {
+      for (const other of document.querySelectorAll('.tab')) {
+        other.classList.toggle('is-active', other === tab);
+      }
+      for (const panel of document.querySelectorAll('.panel')) {
+        panel.classList.toggle('is-active', panel.id === tab.dataset.panel);
+      }
+    });
+  }
+
+  // Report and block live behind an overflow menu. They should be reachable in
+  // one tap but not sit next to Mute inviting a misclick.
+  function closeMoreMenu() {
+    el.moreMenu.hidden = true;
+    el.moreBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  el.moreBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = el.moreMenu.hidden;
+    el.moreMenu.hidden = !open;
+    el.moreBtn.setAttribute('aria-expanded', String(open));
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.overflow')) closeMoreMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeMoreMenu();
+  });
 
   // ------------------------------------------------------------------- boot
 
@@ -866,7 +1147,14 @@
     state.autoCall = store.read('autoCall', false);
     el.autoCall.checked = state.autoCall;
     el.premium.checked = store.read('premium', false);
-    el.genderWrap.style.display = el.premium.checked ? 'block' : 'none';
+    el.genderWrap.hidden = !el.premium.checked;
+
+    state.captions = store.read('captions', false);
+    el.captionsOn.checked = state.captions;
+    el.captionLangs.hidden = !state.captions;
+    state.language = store.read('language', 'en');
+    state.translateTo = store.read('translateTo', '') || null;
+    el.notify.checked = store.read('notify', false);
 
     const requested = new URLSearchParams(location.search).get('mode');
     el.mode.value = requested === 'text' ? 'text' : (store.read('mode', 'voice'));

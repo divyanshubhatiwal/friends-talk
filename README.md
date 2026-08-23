@@ -1,4 +1,4 @@
-# Wavelength
+# Friends Talk
 
 Anonymous **voice-first random chat**. One tap matches you with a stranger by voice — no camera,
 no profile, no account. Text chat is included and can be upgraded to a voice call mid-conversation.
@@ -69,6 +69,7 @@ browser A ◄══════ WebRTC peer connection ══════► bro
 | Rooms & game | `src/rooms.js` | Live room registry and the tic-tac-toe state machine |
 | Moderation | `src/moderation.js` | Screens text and images before delivery |
 | Names | `src/names.js` | Throwaway two-word display names |
+| Speech | `src/voice.js` | Transcription and translation; one transcript serves captions *and* moderation |
 | Storage | `src/storage/mongo.js` | Connection, TTL indexes, never logs the URI |
 | Data API | `src/storage/repository.js` | Blocks, friends, calls, reports, bans — with memory fallback |
 | Client | `public/js/app.js` | WebRTC, pitch analysis, visualiser, all UI |
@@ -85,6 +86,10 @@ browser A ◄══════ WebRTC peer connection ══════► bro
 - Call history — last five conversations
 - Auto-call the next person
 - Premium gender preference filter, estimated **in the browser** from voice pitch
+- **Live captions with translation** — opt-in, 20 languages
+- **Spoken-word moderation** — the transcript is screened with the same rules as typed text
+- **Self-widening queue** — filters relax the longer you wait, and the app says so
+- **Notify me when someone is looking** — opt-in browser notification
 - 18+ age gate, live online counter, responsive down to mobile
 
 ## Configuration

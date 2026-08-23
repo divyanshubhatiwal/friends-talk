@@ -1,5 +1,5 @@
 {
-  "name": "wavelength",
+  "name": "friends-talk",
   "version": "1.0.0",
   "description": "Anonymous voice-first random chat — talk to strangers by voice or text, no signup, no camera.",
   "main": "server.js",

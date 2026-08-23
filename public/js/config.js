@@ -12,7 +12,7 @@
  * variable, so the committed value stays empty and the web build is unaffected.
  */
 
-window.WAVELENGTH = {
+window.FRIENDSTALK = {
   serverUrl: '',
 
   // Native shells report themselves here so the UI can adapt (a phone has no

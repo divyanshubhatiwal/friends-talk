@@ -1,4 +1,4 @@
-// Wavelength — anonymous voice-first random chat.
+// Friends Talk — anonymous voice-first random chat.
 //
 // The server does three things: it matches two strangers, it relays the WebRTC
 // handshake between them, and it screens anything textual or visual that passes
@@ -10,7 +10,14 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 
-import { Matchmaker } from './src/matchmaker.js';
+import { Matchmaker, relaxationFor } from './src/matchmaker.js';
+import {
+  transcribe, translate, LANGUAGES,
+  isAvailable as voiceAvailable,
+  provider as voiceProvider,
+  verify as voiceVerify,
+  healthReason as voiceReason
+} from './src/voice.js';
 import { RoomRegistry, newGame, applyMove } from './src/rooms.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
@@ -37,6 +44,14 @@ const online = new Map();
 // A client reported this many times in 24 hours is suspended automatically.
 const REPORT_BAN_THRESHOLD = 5;
 const REPORT_BAN_SECONDS = 24 * 60 * 60;
+
+// How often the queue retries pairing everyone already waiting.
+const SWEEP_INTERVAL_MS = 3000;
+
+// Spoken violations escalate faster than typed ones: saying it out loud to
+// someone is the thing this product exists to prevent.
+const VOICE_STRIKE_LIMIT = 3;
+const VOICE_BAN_SECONDS = 60 * 60;
 
 const ICE_SERVERS = buildIceServers();
 
@@ -101,7 +116,12 @@ io.on('connection', (socket) => {
     gender: 'unknown',
     blocked: new Set(),
     joinedAt: Date.now(),
-    ageConfirmed: false
+    ageConfirmed: false,
+    captions: false,
+    language: 'en',
+    translateTo: null,
+    voiceStrikes: 0,
+    notifyWhenOnline: false
   };
   peers.set(socket.id, peer);
 
@@ -109,7 +129,12 @@ io.on('connection', (socket) => {
     selfId: socket.id,
     name: peer.name,
     iceServers: ICE_SERVERS,
-    stats: stats()
+    stats: stats(),
+    // The client hides the caption controls entirely when the server has no
+    // speech provider configured, rather than offering a toggle that does
+    // nothing when switched on.
+    voiceFeatures: voiceAvailable(),
+    languages: LANGUAGES
   });
 
   socket.on('hello', async (payload = {}) => {
@@ -166,14 +191,95 @@ io.on('connection', (socket) => {
       ? payload.gender
       : 'unknown';
     peer.joinedAt = Date.now();
+    peer.captions = payload.captions === true;
+    peer.language = LANGUAGES[payload.language] ? payload.language : 'en';
+    peer.translateTo = LANGUAGES[payload.translateTo] ? payload.translateTo : null;
 
     const partner = matchmaker.enqueue(peer);
     if (!partner) {
-      socket.emit('waiting', { mode: peer.mode });
+      emitWaiting(socket, peer);
+      pingWatchers(socket.id);
       broadcastStats();
       return;
     }
     pair(peer, partner);
+  });
+
+  // Opt-in ping when the queue is no longer empty, so nobody has to sit and
+  // watch a spinner on a quiet server.
+  socket.on('notify', (payload = {}) => {
+    peer.notifyWhenOnline = payload.on === true;
+    socket.emit('notify:ok', { on: peer.notifyWhenOnline });
+  });
+
+  /**
+   * A few seconds of the speaker's own microphone, for captioning.
+   *
+   * The clip is transcribed, screened, relayed to the partner as a caption,
+   * and discarded. It is never written to disk. This only runs when the
+   * speaker has switched captions on.
+   */
+  socket.on('voice:clip', async (payload = {}) => {
+    if (!peer.captions || !voiceAvailable()) return;
+    const room = rooms.forSocket(socket.id);
+    if (!room) return;
+
+    const chunk = payload.chunk;
+    if (!chunk || typeof chunk.byteLength !== 'number') return;
+
+    const text = await transcribe(Buffer.from(chunk), {
+      mimeType: typeof payload.mimeType === 'string' ? payload.mimeType : 'audio/webm',
+      language: peer.language
+    });
+    if (!text) return;
+
+    // The room can end while transcription is in flight.
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    const partner = peers.get(partnerId);
+
+    // Moderate what was actually said, using the same rules as typed messages.
+    const check = screenText(text);
+    if (check.verdict !== VERDICT.ALLOW) {
+      await recordReport({
+        kind: 'auto-voice',
+        reason: `spoken:${check.reason}`,
+        roomId: room.id,
+        clientId: peer.clientId
+      });
+    }
+    if (check.verdict === VERDICT.BLOCK) {
+      peer.voiceStrikes += 1;
+      socket.emit('voice:warning', {
+        reason: check.reason,
+        strikes: peer.voiceStrikes,
+        limit: VOICE_STRIKE_LIMIT
+      });
+      if (peer.voiceStrikes >= VOICE_STRIKE_LIMIT) {
+        await store.banClient(peer.clientId, {
+          reason: 'spoken_violations',
+          seconds: VOICE_BAN_SECONDS
+        });
+        socket.emit('error:blocked', { reason: 'suspended' });
+        leaveRoom(socket, 'suspended');
+      }
+      // The offending line is never forwarded as a caption.
+      return;
+    }
+
+    socket.emit('caption', { from: 'me', text, at: Date.now() });
+
+    if (partner?.captions) {
+      const translated = partner.translateTo && partner.translateTo !== peer.language
+        ? await translate(text, partner.translateTo)
+        : null;
+      io.to(partnerId).emit('caption', {
+        from: 'them',
+        text: translated || text,
+        original: translated ? text : null,
+        at: Date.now()
+      });
+    }
   });
 
   socket.on('cancel', () => {
@@ -364,6 +470,60 @@ function pair(a, b) {
   broadcastStats();
 }
 
+/**
+ * Tells a waiting peer what is actually happening.
+ *
+ * A spinner with no information is indistinguishable from a broken app, which
+ * matters most on a quiet server where waiting is normal. This reports the real
+ * queue depth and names any filter that has been relaxed, so a long wait reads
+ * as "nobody is here yet" rather than "this is broken".
+ */
+function emitWaiting(socket, peer) {
+  const relaxed = relaxationFor(peer);
+  socket.emit('waiting', {
+    mode: peer.mode,
+    queued: matchmaker.waitingIn(peer.mode),
+    online: peers.size,
+    waitedMs: Date.now() - peer.joinedAt,
+    relaxedLabel: relaxed.label
+  });
+}
+
+/**
+ * Tells idle watchers that somebody has started looking for a call.
+ *
+ * Only peers who explicitly opted in are pinged, and only when they are neither
+ * queued nor already in a room — otherwise this would interrupt the very
+ * conversation it is advertising.
+ */
+function pingWatchers(exceptSocketId) {
+  for (const [socketId, candidate] of peers) {
+    if (socketId === exceptSocketId) continue;
+    if (!candidate.notifyWhenOnline) continue;
+    if (rooms.forSocket(socketId)) continue;
+    if (matchmaker.pool.has(socketId)) continue;
+    io.to(socketId).emit('someone:waiting', { waiting: matchmaker.size() });
+  }
+}
+
+let sweepTimer = null;
+
+function startSweep() {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(() => {
+    for (const [a, b] of matchmaker.sweep()) {
+      if (peers.has(a.id) && peers.has(b.id)) pair(a, b);
+    }
+    // Refresh everyone still waiting so relaxation notices and queue depth
+    // stay current without the client polling for them.
+    for (const waiter of matchmaker.pool.values()) {
+      const socket = io.sockets.sockets.get(waiter.id);
+      if (socket) emitWaiting(socket, waiter);
+    }
+  }, SWEEP_INTERVAL_MS);
+  sweepTimer.unref?.();
+}
+
 function leaveRoom(socket, reason) {
   const room = rooms.forSocket(socket.id);
   if (!room) return;
@@ -434,7 +594,23 @@ function sanitizeCountry(value) {
 }
 
 await store.init();
+startSweep();
+
+// Check the credential before announcing the feature, so the log tells the
+// truth about what this process can actually do.
+await voiceVerify();
+
+if (voiceAvailable()) {
+  console.log(`Voice: captions, translation, and spoken-word moderation enabled via ${voiceProvider()}.`);
+} else if (voiceProvider()) {
+  console.warn(
+    `Voice: a ${voiceProvider()} key is set but ${voiceReason()} — ` +
+    'captions and spoken-word moderation are OFF. Everything else works normally.'
+  );
+} else {
+  console.log('Voice: no GEMINI_API_KEY or OPENAI_API_KEY — captions and spoken-word moderation are OFF.');
+}
 
 httpServer.listen(PORT, () => {
-  console.log(`Wavelength listening on http://localhost:${PORT}`);
+  console.log(`Friends Talk listening on http://localhost:${PORT}`);
 });

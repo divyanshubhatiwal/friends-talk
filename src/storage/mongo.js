@@ -15,7 +15,7 @@
 import { MongoClient } from 'mongodb';
 
 const DEFAULT_URI = 'mongodb://127.0.0.1:27017';
-const DEFAULT_DB = 'wavelength';
+const DEFAULT_DB = 'friends-talk';
 
 const DAY = 24 * 60 * 60;
 

@@ -32,6 +32,8 @@ const MINOR_PATTERNS = [
   /\b(?:middle|primary)\s+school\b/i
 ];
 
+import { geminiAuth } from './voice.js';
+
 const VERDICT = { ALLOW: 'allow', FLAG: 'flag', BLOCK: 'block' };
 
 export function screenText(text) {
@@ -80,6 +82,61 @@ export async function screenImage(dataUrl) {
 }
 
 async function screenImageRemotely(dataUrl) {
+  if (process.env.GEMINI_API_KEY) return screenImageWithGemini(dataUrl);
+  return screenImageWithOpenAI(dataUrl);
+}
+
+/**
+ * Gemini has no dedicated moderation endpoint, so the model is asked to
+ * classify directly. It is told to answer with a single token, and anything
+ * other than a clean OK is treated as a block — an unparseable answer on a
+ * safety check should fail closed, not wave the image through.
+ */
+async function screenImageWithGemini(dataUrl) {
+  const match = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) return { verdict: VERDICT.BLOCK, reason: 'malformed_image' };
+  const [, mime, payload] = match;
+
+  try {
+    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    const auth = geminiAuth();
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent${auth.query}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth.headers },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                text:
+                  'You are screening an image shared between two strangers in an ' +
+                  'anonymous chat. Reply with exactly one word. Reply BLOCK if it ' +
+                  'contains nudity, sexual content, gore, graphic violence, hate ' +
+                  'symbols, or anyone who appears to be a minor in any unsafe ' +
+                  'context. Otherwise reply OK.'
+              },
+              { inline_data: { mime_type: mime, data: payload } }
+            ]
+          }],
+          generationConfig: { temperature: 0, maxOutputTokens: 8 }
+        }),
+        signal: AbortSignal.timeout(8000)
+      }
+    );
+
+    if (!res.ok) return null; // provider unreachable — local screening stands
+    const body = await res.json();
+    const answer = body?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('').trim().toUpperCase();
+    if (!answer) return null;
+    if (answer.startsWith('OK')) return null;
+    return { verdict: VERDICT.BLOCK, reason: 'flagged' };
+  } catch {
+    return null;
+  }
+}
+
+async function screenImageWithOpenAI(dataUrl) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return null;
 

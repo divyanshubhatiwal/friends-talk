@@ -1,4 +1,4 @@
-# Deploying Wavelength
+# Deploying Friends Talk
 
 Two paths. **Both require the server to be publicly hosted** — a TestFlight app is only a shell that
 talks to your server, so hosting is step 1 either way.
@@ -91,7 +91,7 @@ notifications, CallKit integration, background audio — is what moves this from
 to "app".
 
 **Guideline 1.2, User-Generated Content.** Anonymous random chat is explicitly named. Apple requires
-four things, and Wavelength already has all four: content filtering (`src/moderation.js`), a
+four things, and Friends Talk already has all four: content filtering (`src/moderation.js`), a
 reporting mechanism, the ability to block abusive users, and published contact information. Keep
 them working and visible; they are the reason this has a chance of passing.
 

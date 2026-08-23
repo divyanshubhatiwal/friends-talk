@@ -6,7 +6,7 @@
 
 services:
   - type: web
-    name: wavelength
+    name: friends-talk
     runtime: node
     plan: free
     # Health checks let Render restart a wedged process instead of serving a

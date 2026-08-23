@@ -7,6 +7,32 @@
 const MODES = new Set(['voice', 'text']);
 const RECENT_PARTNER_MEMORY = 6;
 
+/**
+ * Filters loosen the longer someone waits.
+ *
+ * A filter that matches nobody is indistinguishable, from the user's side,
+ * from a broken app: you press call and stare at a spinner forever. On a small
+ * server that is the normal case, not the edge case. So after a few seconds we
+ * quietly drop the preferences the user is least likely to care about, in
+ * order, and tell them we did it.
+ *
+ * Blocks and mode are never relaxed — those are rules, not preferences.
+ */
+const RELAXATION = [
+  { after: 0,     ignoreGender: false, ignoreCountry: false, label: null },
+  { after: 12000, ignoreGender: true,  ignoreCountry: false, label: 'gender preference' },
+  { after: 25000, ignoreGender: true,  ignoreCountry: true,  label: 'country filter' }
+];
+
+export function relaxationFor(peer, now = Date.now()) {
+  const waited = now - peer.joinedAt;
+  let current = RELAXATION[0];
+  for (const step of RELAXATION) {
+    if (waited >= step.after) current = step;
+  }
+  return current;
+}
+
 export class Matchmaker {
   constructor() {
     /** @type {Map<string, object>} socketId -> waiter */
@@ -38,12 +64,14 @@ export class Matchmaker {
 
   findPartner(peer) {
     let best = null;
-    let bestScore = -1;
+    let bestScore = -Infinity;
 
     for (const candidate of this.pool.values()) {
       if (candidate.id === peer.id) continue;
       const score = this.score(peer, candidate);
-      if (score < 0) continue;
+      // null means the pairing is forbidden. A negative number is merely
+      // undesirable, and still beats leaving both people in the queue.
+      if (score === null) continue;
       if (score > bestScore) {
         bestScore = score;
         best = candidate;
@@ -52,13 +80,21 @@ export class Matchmaker {
     return best;
   }
 
-  // Returns -1 for an impossible pairing, otherwise a preference score.
+  /**
+   * Returns null for a forbidden pairing, otherwise a preference score that
+   * may legitimately be negative.
+   *
+   * Null and "low score" have to stay distinct. The anti-rematch penalty below
+   * is a preference, not a rule: when two people are the only ones waiting,
+   * pairing them again is far better than leaving them both in the queue
+   * forever, which is what treating any negative score as forbidden used to do.
+   */
   score(a, b) {
-    if (a.mode !== b.mode) return -1;
-    if (a.clientId === b.clientId) return -1;
-    if (a.blocked.has(b.clientId) || b.blocked.has(a.clientId)) return -1;
-    if (!this.countryAllows(a, b) || !this.countryAllows(b, a)) return -1;
-    if (!this.genderAllows(a, b) || !this.genderAllows(b, a)) return -1;
+    if (a.mode !== b.mode) return null;
+    if (a.clientId === b.clientId) return null;
+    if (a.blocked.has(b.clientId) || b.blocked.has(a.clientId)) return null;
+    if (!this.countryAllows(a, b) || !this.countryAllows(b, a)) return null;
+    if (!this.genderAllows(a, b) || !this.genderAllows(b, a)) return null;
 
     let score = 0;
 
@@ -79,6 +115,7 @@ export class Matchmaker {
   }
 
   countryAllows(viewer, candidate) {
+    if (relaxationFor(viewer).ignoreCountry) return true;
     if (!viewer.countries.length) return true;
     return viewer.countries.includes(candidate.country);
   }
@@ -87,9 +124,38 @@ export class Matchmaker {
   // guarantee — an unknown estimate is allowed through rather than dropped.
   genderAllows(viewer, candidate) {
     if (!viewer.premium) return true;
+    if (relaxationFor(viewer).ignoreGender) return true;
     if (!viewer.genderPreference || viewer.genderPreference === 'any') return true;
     if (!candidate.gender || candidate.gender === 'unknown') return true;
     return candidate.gender === viewer.genderPreference;
+  }
+
+  /**
+   * Re-attempt matching for everyone already waiting.
+   *
+   * Matching otherwise only runs when someone joins the queue, so two people
+   * whose filters relax past each other would both sit there indefinitely with
+   * nobody to trigger a retry. The server runs this on a timer.
+   */
+  sweep() {
+    const pairs = [];
+    for (const peer of [...this.pool.values()]) {
+      if (!this.pool.has(peer.id)) continue; // already paired earlier in this sweep
+      const partner = this.findPartner(peer);
+      if (!partner) continue;
+      this.pool.delete(peer.id);
+      this.pool.delete(partner.id);
+      this.rememberPair(peer, partner);
+      pairs.push([peer, partner]);
+    }
+    return pairs;
+  }
+
+  /** Queue depth for a mode, so waiting can show a real number. */
+  waitingIn(mode) {
+    let count = 0;
+    for (const peer of this.pool.values()) if (peer.mode === mode) count++;
+    return count;
   }
 
   rememberPair(a, b) {

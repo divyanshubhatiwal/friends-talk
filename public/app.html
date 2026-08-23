@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>Wavelength — Voice Chat</title>
+<title>Friends Talk — Voice Chat</title>
 <link rel="stylesheet" href="/css/app.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎧</text></svg>">
 </head>
@@ -19,118 +19,202 @@
         <stop stop-color="#35e0d0"/><stop offset="1" stop-color="#5b8dff"/>
       </linearGradient></defs>
     </svg>
-    Wavelength
+    <span>Friends Talk</span>
   </a>
 
-  <button class="ctrl" id="toggle-left" aria-label="Toggle filters panel">Filters</button>
-  <button class="ctrl" id="toggle-right" aria-label="Toggle chat panel">Chat</button>
-
-  <div class="presence">
+  <div class="presence" title="People online now">
     <span class="dot"></span>
-    <b id="online-count">0</b> online
-    <span style="color:var(--text-faint)">·</span>
+    <b id="online-count">0</b>
+    <span class="presence-sep"></span>
     <b id="call-count">0</b> talking
   </div>
+
+  <button class="bar-btn" id="toggle-left" aria-label="Show settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M4 6h16M4 12h16M4 18h10"/>
+    </svg>
+  </button>
+  <button class="bar-btn" id="toggle-right" aria-label="Show conversation">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  </button>
 </header>
 
 <div class="app-main">
 
-  <!-- ------------------------------------------------------------ filters -->
+  <!-- ------------------------------------------------------------ sidebar -->
   <aside class="pane pane-left" id="pane-left">
-    <div class="pane-section">
-      <h3>Mode</h3>
-      <label class="field">
-        <span>How do you want to start?</span>
-        <select id="mode">
-          <option value="voice">Voice call</option>
-          <option value="text">Text chat</option>
-        </select>
-      </label>
-      <p class="hint">A text chat can be turned into a voice call at any time — both sides have to agree.</p>
+    <div class="tabs" role="tablist">
+      <button class="tab is-active" data-panel="panel-filters" role="tab">Filters</button>
+      <button class="tab" data-panel="panel-recent" role="tab">Recent</button>
+      <button class="tab" data-panel="panel-friends" role="tab">Friends</button>
     </div>
 
-    <div class="pane-section">
-      <h3>Filters</h3>
-      <label class="field">
-        <span>Your country</span>
+    <div class="panel is-active" id="panel-filters">
+      <div class="group">
+        <label class="group-label">Start with</label>
+        <div class="segmented" id="mode-seg" role="radiogroup" aria-label="Conversation mode">
+          <button class="seg is-active" data-mode="voice" role="radio" aria-checked="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
+            </svg>
+            Voice
+          </button>
+          <button class="seg" data-mode="text" role="radio" aria-checked="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            Text
+          </button>
+        </div>
+      </div>
+
+      <div class="group">
+        <label class="group-label" for="my-country">You are in</label>
         <select id="my-country"></select>
-      </label>
-      <label class="field">
-        <span>Match with (hold Ctrl to pick several)</span>
-        <select id="target-countries" multiple></select>
-      </label>
-      <label class="field">
-        <span>Interests</span>
-        <input type="text" id="interest-input" placeholder="music, travel, coding… then Enter">
-      </label>
-      <div class="tags" id="interest-tags"></div>
-      <p class="hint">Shared interests are preferred, never required — you will still be matched if nobody matches your tags.</p>
+      </div>
+
+      <div class="group">
+        <label class="group-label" for="interest-input">Interests</label>
+        <input type="text" id="interest-input" placeholder="Add a topic, press Enter" autocomplete="off">
+        <div class="tags" id="interest-tags"></div>
+      </div>
+
+      <div class="group" id="caption-settings" hidden>
+        <label class="switch">
+          <span>Live captions</span>
+          <input type="checkbox" id="captions-on">
+        </label>
+        <div id="caption-langs" hidden>
+          <label class="group-label" for="my-language">You speak</label>
+          <select id="my-language"></select>
+          <label class="group-label" for="translate-to" style="margin-top:10px">Translate theirs to</label>
+          <select id="translate-to"><option value="">Don't translate</option></select>
+          <p class="hint">
+            Captions send short clips of your microphone to the server to be
+            transcribed, then discard them. Nothing is stored.
+          </p>
+        </div>
+      </div>
+
+      <details class="more">
+        <summary>More filters</summary>
+        <div class="group">
+          <label class="group-label" for="target-countries">Match with</label>
+          <select id="target-countries" multiple size="6"></select>
+          <p class="hint">Leave empty for anywhere. Hold Ctrl to pick several.</p>
+        </div>
+
+        <label class="switch">
+          <span>Auto-call next person</span>
+          <input type="checkbox" id="auto-call">
+        </label>
+
+        <label class="switch">
+          <span>Notify me when someone is looking</span>
+          <input type="checkbox" id="notify-on">
+        </label>
+
+        <label class="switch">
+          <span>Gender filter <em class="badge">Premium</em></span>
+          <input type="checkbox" id="premium">
+        </label>
+
+        <div class="group" id="gender-pref-wrap" hidden>
+          <label class="group-label" for="gender-pref">Prefer</label>
+          <select id="gender-pref">
+            <option value="any">Anyone</option>
+            <option value="female">Female voices</option>
+            <option value="male">Male voices</option>
+          </select>
+          <p class="hint">Estimated from voice pitch — a preference, not a guarantee.</p>
+        </div>
+      </details>
     </div>
 
-    <div class="pane-section">
-      <h3>Preferences</h3>
-      <label class="switch">
-        <span>Auto-call next person</span>
-        <input type="checkbox" id="auto-call">
-      </label>
-      <label class="switch">
-        <span>Premium: gender filter</span>
-        <input type="checkbox" id="premium">
-      </label>
-      <label class="field" id="gender-pref-wrap" style="display:none; margin-top:10px">
-        <span>Prefer to talk with</span>
-        <select id="gender-pref">
-          <option value="any">Anyone</option>
-          <option value="female">Female voices</option>
-          <option value="male">Male voices</option>
-        </select>
-      </label>
-      <p class="hint">Gender is estimated live from voice pitch. It is an estimate, not a verified attribute.</p>
+    <div class="panel" id="panel-recent">
+      <div class="list" id="history-list"></div>
     </div>
 
-    <div class="pane-section">
-      <h3>Recent calls</h3>
-      <div class="list" id="history-list"><div class="empty">No calls yet.</div></div>
-    </div>
-
-    <div class="pane-section">
-      <h3>Friends</h3>
-      <div class="list" id="friends-list"><div class="empty">Add someone during a call.</div></div>
+    <div class="panel" id="panel-friends">
+      <div class="list" id="friends-list"></div>
     </div>
   </aside>
 
   <!-- -------------------------------------------------------------- stage -->
-  <main class="pane">
+  <main class="pane stage-pane">
     <div class="stage">
+
       <div class="partner-card" id="partner-card">
         <div class="partner-avatar" id="partner-initial">?</div>
         <div class="partner-meta">
           <div class="nm" id="partner-name">—</div>
           <div class="sub" id="partner-sub">—</div>
         </div>
+        <div class="timer" id="timer"></div>
       </div>
 
       <div class="viz" id="viz" aria-hidden="true"></div>
 
-      <div class="status-line" id="status">Press call to meet someone new.</div>
-      <div class="timer" id="timer"></div>
+      <p class="status-line" id="status">Press call to meet someone new.</p>
+      <p class="queue-note" id="queue-note" hidden></p>
+
+      <div class="captions" id="caption-bar" hidden>
+        <p class="caption-line them" id="caption-them"></p>
+        <p class="caption-line me" id="caption-me"></p>
+      </div>
 
       <button class="call-btn" id="call-btn" aria-label="Call a stranger">
+        <svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0M12 18v3"/>
+        </svg>
         <span class="cap" id="call-cap">Call</span>
       </button>
 
-      <div class="controls">
-        <button class="ctrl" id="btn-mute" disabled>Mute</button>
-        <button class="ctrl" id="btn-next" disabled>Next</button>
-        <button class="ctrl" id="btn-voice" disabled>Switch to voice</button>
-        <button class="ctrl" id="btn-game" disabled>Tic-tac-toe</button>
-        <button class="ctrl" id="btn-friend" disabled>Add friend</button>
-        <button class="ctrl danger" id="btn-report" disabled>Report</button>
-        <button class="ctrl danger" id="btn-block" disabled>Block</button>
+      <!-- Only rendered during a call — an idle screen shows none of this. -->
+      <div class="controls" id="controls" hidden>
+        <button class="ctrl" id="btn-mute" title="Mute" aria-label="Mute">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
+          </svg>
+        </button>
+        <button class="ctrl" id="btn-next" title="Next person" aria-label="Next person">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M5 4l10 8-10 8zM19 5v14"/>
+          </svg>
+        </button>
+        <button class="ctrl" id="btn-voice" title="Switch to voice" aria-label="Switch to voice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
+          </svg>
+        </button>
+        <button class="ctrl" id="btn-game" title="Play tic-tac-toe" aria-label="Play tic-tac-toe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+          </svg>
+        </button>
+        <button class="ctrl" id="btn-friend" title="Add friend" aria-label="Add friend">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6"/>
+          </svg>
+        </button>
+
+        <div class="overflow">
+          <button class="ctrl" id="btn-more" title="More" aria-label="More actions" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>
+            </svg>
+          </button>
+          <div class="menu" id="more-menu" hidden>
+            <button id="btn-report">Report this person</button>
+            <button id="btn-block" class="danger">Block permanently</button>
+          </div>
+        </div>
       </div>
 
-      <div id="game-wrap" style="display:none">
-        <div class="status-line" id="game-status"></div>
+      <div class="game" id="game-wrap" hidden>
+        <p class="game-status" id="game-status"></p>
         <div class="board" id="board"></div>
       </div>
     </div>
@@ -138,21 +222,19 @@
 
   <!-- --------------------------------------------------------------- chat -->
   <aside class="pane pane-right" id="pane-right">
-    <div class="pane-section" style="border-bottom:1px solid var(--border)">
-      <h3>Conversation</h3>
-      <p class="hint" style="margin:0">Messages are screened before delivery and are never stored on our servers.</p>
+    <div class="chat-log" id="chat-log">
+      <p class="chat-empty">Messages appear here once you are connected.</p>
     </div>
-    <div class="chat-log" id="chat-log"></div>
     <div class="typing" id="typing"></div>
     <div class="composer">
-      <input type="text" id="chat-input" placeholder="Type a message…" autocomplete="off" disabled>
-      <button class="icon-btn" id="btn-image" title="Send an image" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+      <input type="text" id="chat-input" placeholder="Message…" autocomplete="off" disabled>
+      <button class="icon-btn" id="btn-image" title="Send an image" aria-label="Send an image" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
         </svg>
       </button>
-      <button class="icon-btn" id="btn-send" title="Send" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="icon-btn primary" id="btn-send" title="Send" aria-label="Send message" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>
         </svg>
       </button>
@@ -165,16 +247,16 @@
 <dialog class="modal" id="age-gate">
   <div class="modal-body">
     <h2>Before you start</h2>
-    <p>Wavelength is for adults only. By continuing you confirm that:</p>
+    <p>Friends Talk is for adults only. By continuing you confirm that:</p>
     <ul>
       <li>You are <strong>18 years or older</strong>.</li>
-      <li>You agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.</li>
-      <li>You understand that calls are peer-to-peer, which means the person you talk to may be able to see your IP address.</li>
-      <li>Text and images you send are screened automatically before delivery.</li>
+      <li>You agree to the <a href="/terms" target="_blank">Terms</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.</li>
+      <li>Calls are peer-to-peer, so the person you talk to may be able to see your IP address.</li>
+      <li>Text and images you send are screened before delivery.</li>
     </ul>
     <div class="modal-actions">
-      <a class="btn btn-ghost btn-sm" href="/">Leave</a>
-      <button class="btn btn-primary btn-sm" id="age-confirm">I am 18 or older — continue</button>
+      <a class="btn btn-ghost" href="/">Leave</a>
+      <button class="btn btn-primary" id="age-confirm">I am 18 or older</button>
     </div>
   </div>
 </dialog>
@@ -183,9 +265,9 @@
 <dialog class="modal" id="report-modal">
   <div class="modal-body">
     <h2>Report this person</h2>
-    <p>Tell us what happened. Reports are reviewed and repeated violations lead to a ban.</p>
-    <label class="field">
-      <span>Reason</span>
+    <p>Reports are reviewed, and repeated violations lead to a ban.</p>
+    <div class="group">
+      <label class="group-label" for="report-reason">What happened?</label>
       <select id="report-reason">
         <option value="harassment">Harassment or abuse</option>
         <option value="sexual_content">Sexual content</option>
@@ -195,16 +277,15 @@
         <option value="scam">Scam attempt</option>
         <option value="other">Something else</option>
       </select>
-    </label>
+    </div>
     <div class="modal-actions">
-      <button class="btn btn-ghost btn-sm" id="report-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="report-send">Send report</button>
+      <button class="btn btn-ghost" id="report-cancel">Cancel</button>
+      <button class="btn btn-primary" id="report-send">Send report</button>
     </div>
   </div>
 </dialog>
 
 <div class="toast-host" id="toasts"></div>
-
 <audio id="remote-audio" autoplay playsinline></audio>
 
 <script src="/js/config.js"></script>

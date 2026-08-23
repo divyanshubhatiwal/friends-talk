@@ -1,6 +1,6 @@
 {
-  "appId": "live.wavelength.app",
-  "appName": "Wavelength",
+  "appId": "live.friendstalk.app",
+  "appName": "Friends Talk",
   "webDir": "www",
   "ios": {
     "contentInset": "always",

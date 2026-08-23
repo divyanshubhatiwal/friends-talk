@@ -10,14 +10,14 @@
 	     prompt for permission — iOS terminates the process immediately. The text
 	     is shown verbatim in the system prompt, and App Review reads it. -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Wavelength needs your microphone so you can talk with the person you are matched with. Audio is sent directly to them and is never recorded.</string>
+	<string>Friends Talk needs your microphone so you can talk with the person you are matched with. Audio is sent directly to them and is never recorded.</string>
 	<!-- Image sharing in a conversation. Remove both keys if you cut that feature. -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose a photo to share with the person you are talking to. Shared images are screened before they are delivered.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Take a photo to share with the person you are talking to. Wavelength never uses video during a call.</string>
+	<string>Take a photo to share with the person you are talking to. Friends Talk never uses video during a call.</string>
 	<key>CFBundleDisplayName</key>
-        <string>Wavelength</string>
+        <string>Friends Talk</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

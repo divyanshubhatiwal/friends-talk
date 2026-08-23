@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Privacy Policy — Wavelength</title>
+<title>Privacy Policy — Friends Talk</title>
 <link rel="stylesheet" href="/css/site.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎧</text></svg>">
 </head>
@@ -11,7 +11,7 @@
 
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="/">Wavelength</a>
+    <a class="brand" href="/">Friends Talk</a>
     <nav class="nav"><a href="/terms">Terms</a><a class="btn btn-primary btn-sm" href="/app">Start talking</a></nav>
   </div>
 </header>
@@ -31,16 +31,41 @@
 
     <h2>What is never collected</h2>
     <p>
-      No video. No real name, phone number, or date of birth. No precise location. <strong>No audio recordings
-      of any kind</strong> — voice travels directly between the two participants' browsers and does not pass
-      through the server.
+      No video. No real name, phone number, or date of birth. No precise location. <strong>No recording of a
+      call is ever made or stored.</strong> With live captions switched off, your voice travels directly
+      between the two participants' browsers and never passes through the server at all.
     </p>
 
-    <h2>Voice analysis</h2>
+    <h2>Voice pitch analysis</h2>
     <p>
       When the optional gender preference filter is enabled, short segments of your own microphone input are
       analysed <em>inside your browser</em> to estimate voice pitch. Only the resulting one-word estimate is
-      sent with a match request. The audio itself never leaves your device and is not stored anywhere.
+      sent with a match request. That audio never leaves your device.
+    </p>
+
+    <h2>Live captions and translation</h2>
+    <p>
+      This one is an exception to everything above, which is why it is off by default and has its own switch.
+    </p>
+    <p>
+      <strong>When you turn captions on, short clips of your microphone — a few seconds each — are sent to the
+      server</strong> and passed to a speech-to-text provider so they can be turned into words. If your
+      conversation partner has asked for translation, that text is then sent to a translation provider. The
+      audio clips are held in memory only for as long as the request takes, are never written to disk, and
+      are discarded immediately afterwards. Neither the audio nor the resulting text is stored.
+    </p>
+    <p>
+      Captions apply only to your own microphone, and only while you have the setting enabled. Turning it off
+      stops the clips immediately. If you would rather no audio ever reach the server, leave captions off —
+      the rest of the service works exactly as before.
+    </p>
+
+    <h2>Spoken-word moderation</h2>
+    <p>
+      While captions are enabled, the transcribed text is also checked against the same content rules applied
+      to typed messages, and a line that breaks them is not passed on to the other person. Repeated spoken
+      violations lead to a temporary suspension. Only the reason code and a timestamp are recorded — never
+      the words themselves, and never the audio.
     </p>
 
     <h2>Retention</h2>
@@ -82,7 +107,7 @@
 </main>
 
 <footer class="site-footer">
-  <div class="wrap"><div class="footer-bottom"><span>© 2026 Wavelength.</span><span><a href="/">Home</a></span></div></div>
+  <div class="wrap"><div class="footer-bottom"><span>© 2026 Friends Talk.</span><span><a href="/">Home</a></span></div></div>
 </footer>
 </body>
 </html>
