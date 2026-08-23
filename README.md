@@ -13,7 +13,7 @@ npm install
 npm start
 ```
 
-Open <http://localhost:3000>.
+Open https://friendstalk.fun/
 
 To try a real call, open the app in **two different browsers** (or one normal window and one private
 window) — two tabs of the same browser share a microphone and will fight over it.
