@@ -15,7 +15,7 @@ plain serverless functions. Render, Railway, and Fly.io all work.
 | Variable | Value |
 |---|---|
 | `MONGODB_URI` | your Atlas connection string |
-| `MONGODB_DB` | `wavelength` |
+| `MONGODB_DB` | `friends-talk` |
 | `PORT` | whatever the host injects (the server already reads it) |
 | `TURN_URL` / `TURN_USERNAME` / `TURN_CREDENTIAL` | see below — not optional in practice |
 
@@ -27,7 +27,7 @@ storage rather than crashing, *it will look like it is working*. Add the host's 
 Network Access, or `0.0.0.0/0` if the host has no stable IP. Then check the boot log:
 
 ```
-Storage: connected to mongodb+srv://…/wavelength     ← good
+Storage: connected to mongodb+srv://…/friends-talk     ← good
 Storage: database unavailable (…) Falling back…      ← allowlist is wrong
 ```
 

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "wavelength",
+      "name": "friends-talk",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
       "port": 3000

@@ -27,7 +27,7 @@ The database name is separate from anything else on the cluster, so collections 
 a dead cluster degrades the service rather than stopping it. The boot log says which mode is live:
 
 ```
-Storage: connected to mongodb+srv://cluster0.xxxxx.mongodb.net/wavelength
+Storage: connected to mongodb+srv://cluster0.xxxxx.mongodb.net/friends-talk
 Storage: database unavailable (…). Falling back to in-memory storage…
 ```
 
@@ -99,7 +99,7 @@ All optional — the server runs with none of it set.
 | Variable | Purpose |
 |---|---|
 | `MONGODB_URI` | Connection string. Falls back to in-memory storage if unreachable |
-| `MONGODB_DB` | Database name (default `wavelength`) |
+| `MONGODB_DB` | Database name (default `friends-talk`) |
 | `MODERATION_TOKEN` | Bearer token for `GET /api/moderation/reports`; unset means the route 404s |
 | `PORT` | HTTP port (default `3000`) |
 | `TURN_URL` | TURN server URL, e.g. `turn:turn.example.com:3478` |

@@ -28,7 +28,7 @@ if (!serverUrl) {
     'A native build has no server at its own origin, so it must be told where\n' +
     'the deployed backend lives. Without this the app installs, opens, and then\n' +
     'fails to connect to anything.\n\n' +
-    '  IOS_SERVER_URL=https://wavelength.example.com npm run build:native\n'
+    '  IOS_SERVER_URL=https://friendstalk.example.com npm run build:native\n'
   );
   process.exit(1);
 }

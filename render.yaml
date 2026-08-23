@@ -26,7 +26,7 @@ services:
         sync: false
 
       - key: MONGODB_DB
-        value: wavelength
+        value: friends-talk
 
       # TURN relay. Optional to boot, but roughly 10-20% of calls fail without
       # it, and mobile carrier NAT is the worst case — which is most phones.
@@ -37,7 +37,12 @@ services:
       - key: TURN_CREDENTIAL
         sync: false
 
-      # Optional: enables OpenAI image moderation on top of local screening.
+      # Speech provider. Set ONE of these to switch on live captions,
+      # translation, and moderation of the spoken word. Gemini wins if both are
+      # present. With neither, the caption controls stay hidden and everything
+      # else works normally.
+      - key: GEMINI_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
 
