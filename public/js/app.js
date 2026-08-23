@@ -130,6 +130,7 @@
     padBtn: $('btn-pad'), padWrap: $('pad-wrap'), padText: $('pad-text'), padNote: $('pad-note'),
     screenBtn: $('btn-screen'), screenWrap: $('screen-wrap'), screenVideo: $('screen-video'),
     screenLabel: $('screen-label'), screenStop: $('screen-stop'), screenReport: $('screen-report'),
+    screenFull: $('screen-full'), screenFullLabel: $('screen-full-label'),
     screenModal: $('screen-modal'), screenAskTitle: $('screen-ask-title'),
     screenAskBody: $('screen-ask-body'), screenAskAccept: $('screen-ask-accept'),
     screenAskDecline: $('screen-ask-decline')
@@ -954,7 +955,58 @@
     el.screenVideo.srcObject = null;
   }
 
-  socket.on('screen:stopped', hideRemoteScreen);
+  /**
+   * Fullscreen for the shared screen.
+   *
+   * The wrapper is what goes fullscreen, not the video, so the live indicator
+   * and the stop and report buttons stay on screen — filling the display should
+   * never remove the controls that let someone get out or flag what they are
+   * being shown.
+   *
+   * iOS Safari does not implement the Fullscreen API on ordinary elements, so
+   * it falls back to the video element's own native fullscreen.
+   */
+  function fullscreenActive() {
+    return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  async function toggleScreenFullscreen() {
+    try {
+      if (fullscreenActive()) {
+        await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
+        return;
+      }
+      const target = el.screenWrap;
+      if (target.requestFullscreen) await target.requestFullscreen({ navigationUI: 'hide' });
+      else if (target.webkitRequestFullscreen) target.webkitRequestFullscreen();
+      else if (el.screenVideo.webkitEnterFullscreen) el.screenVideo.webkitEnterFullscreen();
+      else toast('Fullscreen is not available in this browser', 'err');
+    } catch {
+      toast('Could not switch to fullscreen', 'err');
+    }
+  }
+
+  function paintFullscreenButton() {
+    const on = fullscreenActive();
+    el.screenFullLabel.textContent = on ? 'Exit' : 'Fullscreen';
+    el.screenFull.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+    el.screenFull.title = el.screenFullLabel.textContent;
+  }
+
+  el.screenFull.addEventListener('click', toggleScreenFullscreen);
+  document.addEventListener('fullscreenchange', paintFullscreenButton);
+  document.addEventListener('webkitfullscreenchange', paintFullscreenButton);
+
+  /** Leaving fullscreen behind after the stream ends would strand the user. */
+  async function exitFullscreenIfActive() {
+    if (!fullscreenActive()) return;
+    try { await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.()); } catch { /* already gone */ }
+  }
+
+  socket.on('screen:stopped', () => {
+    exitFullscreenIfActive();
+    hideRemoteScreen();
+  });
 
   el.screenStop.addEventListener('click', () => {
     if (screenStream) return stopSharing('manual');
@@ -1524,6 +1576,7 @@
       });
     }
     state.callbackToken = null;
+    exitFullscreenIfActive();
     stopSharing('teardown');
     watchingScreen = false;
     el.screenWrap.hidden = true;
