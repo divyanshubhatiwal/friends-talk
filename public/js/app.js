@@ -924,11 +924,12 @@
   }
 
   /**
-   * The sharer's own view is deliberately small.
+   * The sharer sees their own screen at the same size the watcher does.
    *
-   * They already have the screen in front of them — a large mirror of it just
-   * takes space away from the call. This is a confirmation strip, not a viewer,
-   * so it shows a thumbnail and no maximize control.
+   * Checking what the other person is actually getting — and being able to
+   * blow it up to confirm it is legible — is worth as much to the person
+   * sharing as to the person watching. Only the report button is withheld,
+   * since reporting your own screen means nothing.
    */
   function showLocalScreen() {
     el.screenWrap.hidden = false;
@@ -936,7 +937,7 @@
     el.screenWrap.classList.remove('is-viewing');
     el.screenLabel.textContent = 'You are sharing your screen';
     el.screenReport.hidden = true;
-    el.screenFull.hidden = true;
+    el.screenFull.hidden = false;
     el.screenVideo.srcObject = screenStream;
     el.screenBtn.classList.add('active');
     el.screenBtn.setAttribute('aria-pressed', 'true');
@@ -951,11 +952,11 @@
   }
 
   /**
-   * The watcher's view is the one that matters.
+   * The watcher gets the same frame, plus the report button.
    *
-   * This person cannot see the screen any other way, so it gets the room: a
-   * large frame, the maximize control, and the report button. It takes over
-   * from any self-preview that was showing.
+   * Report is the one control that only makes sense here: this is the person
+   * being shown something by someone else, and a live video stream has no
+   * automated screening behind it.
    */
   function showRemoteScreen(stream) {
     watchingScreen = true;
