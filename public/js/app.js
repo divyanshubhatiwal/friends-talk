@@ -126,7 +126,8 @@
     speakIncoming: $('speak-incoming'), speakTyped: $('speak-typed'),
     speechHint: $('speech-hint'),
     ringModal: $('ring-modal'), ringName: $('ring-name'), ringSub: $('ring-sub'),
-    ringAvatar: $('ring-avatar'), ringAccept: $('ring-accept'), ringDecline: $('ring-decline')
+    ringAvatar: $('ring-avatar'), ringAccept: $('ring-accept'), ringDecline: $('ring-decline'),
+    padBtn: $('btn-pad'), padWrap: $('pad-wrap'), padText: $('pad-text'), padNote: $('pad-note')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -794,6 +795,86 @@
     }
   }
 
+  // -------------------------------------------------------- shared notepad
+
+  /**
+   * A scratch pad both sides type into.
+   *
+   * Two rules keep it from fighting the person using it. Outgoing edits are
+   * debounced, so a burst of typing is one message rather than one per key.
+   * Incoming edits are ignored while this user is actively typing — otherwise a
+   * remote update would land mid-word and throw the caret to the end, which is
+   * the thing that makes naive shared editors unusable.
+   */
+  let padSendTimer = null;
+  let padLastTyped = 0;
+
+  function padVisible() {
+    return !el.padWrap.hidden;
+  }
+
+  function togglePad(show) {
+    const next = show ?? el.padWrap.hidden;
+    el.padWrap.hidden = !next;
+    el.padBtn.classList.toggle('active', next);
+    el.padBtn.setAttribute('aria-pressed', String(next));
+    if (next) {
+      socket.emit('pad:request');
+      el.padText.focus();
+    }
+  }
+
+  el.padBtn.addEventListener('click', () => togglePad());
+
+  el.padText.addEventListener('input', () => {
+    padLastTyped = Date.now();
+    el.padNote.textContent = 'Syncing…';
+    el.padNote.classList.add('saving');
+
+    clearTimeout(padSendTimer);
+    padSendTimer = setTimeout(() => {
+      socket.emit('pad:update', { text: el.padText.value });
+      el.padNote.textContent = 'Saved to the room';
+      el.padNote.classList.remove('saving');
+    }, 300);
+  });
+
+  socket.on('pad:sync', ({ text, by }) => {
+    // Never overwrite someone mid-keystroke.
+    if (Date.now() - padLastTyped < 1200) return;
+    if (el.padText.value === text) return;
+
+    const atEnd = el.padText.selectionStart === el.padText.value.length;
+    const caret = el.padText.selectionStart;
+    el.padText.value = text;
+    // Keep the caret where it was unless it was trailing the text.
+    el.padText.selectionStart = el.padText.selectionEnd = atEnd ? text.length : Math.min(caret, text.length);
+
+    el.padNote.textContent = by ? `${by} is editing` : 'Updated';
+    el.padNote.classList.remove('saving');
+
+    // Opening the pad for the receiver is better than a silent change nobody
+    // notices, but only once there is actually something to see.
+    if (!padVisible() && text.trim()) {
+      togglePad(true);
+      toast('They opened a shared notepad');
+    }
+  });
+
+  socket.on('pad:blocked', ({ reason }) => {
+    el.padNote.textContent = 'Not shared — flagged content';
+    el.padNote.classList.remove('saving');
+    toast(`Notepad not shared: ${humanReason(reason)}`, 'err');
+  });
+
+  function resetPad() {
+    clearTimeout(padSendTimer);
+    el.padText.value = '';
+    el.padNote.textContent = 'Both of you can type here';
+    el.padNote.classList.remove('saving');
+    togglePad(false);
+  }
+
   // ------------------------------------------------------------- speech out
 
   /**
@@ -1270,6 +1351,7 @@
     stopGroup();
     stopViz();
     stopCaptions();
+    resetPad();
     stopTimer();
     el.queueNote.hidden = true;
     state.phase = 'idle';

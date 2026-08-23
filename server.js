@@ -534,6 +534,51 @@ io.on('connection', (socket) => {
     socket.emit('blocked:ok', { clientId: targetClientId });
   });
 
+  // ------------------------------------------------------- shared notepad
+
+  /**
+   * A scratch pad both sides can type in.
+   *
+   * Deliberately last-write-wins with a debounce on the client rather than a
+   * conflict-free type. Two or three people jotting a word down do not generate
+   * the concurrent edits that would justify the complexity, and a wrong merge
+   * would be more confusing than a lost keystroke.
+   *
+   * The text is relayed, never stored, and dies with the room.
+   */
+  socket.on('pad:update', (payload = {}) => {
+    const text = String(payload.text || '').slice(0, 20000);
+
+    const check = screenText(text);
+    if (check.verdict === VERDICT.BLOCK) {
+      socket.emit('pad:blocked', { reason: check.reason });
+      return;
+    }
+
+    const groupRoom = groups.roomOf(socket.id);
+    if (groupRoom) {
+      groupRoom.pad = text;
+      for (const member of groupRoom.members.keys()) {
+        if (member === socket.id) continue;
+        io.to(member).emit('pad:sync', { text, by: peer.name });
+      }
+      return;
+    }
+
+    const room = rooms.forSocket(socket.id);
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!room || !partnerId) return;
+    room.pad = text;
+    io.to(partnerId).emit('pad:sync', { text, by: peer.name });
+  });
+
+  // Someone opening the pad mid-conversation needs whatever is already there.
+  socket.on('pad:request', () => {
+    const groupRoom = groups.roomOf(socket.id);
+    const room = groupRoom || rooms.forSocket(socket.id);
+    if (room?.pad) socket.emit('pad:sync', { text: room.pad, by: null });
+  });
+
   // ------------------------------------------------------ typed-to-spoken
 
   /**

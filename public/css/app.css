@@ -535,6 +535,58 @@ select[multiple] option { padding: 6px 8px; border-radius: 6px; }
 .menu button:hover { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
 .menu button.danger:hover { background: rgba(255, 95, 109, 0.16); color: var(--danger); }
 
+/* ----------------------------------------------------------------- notepad */
+
+.pad {
+  width: min(560px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  overflow: hidden;
+  text-align: left;
+}
+.pad[hidden] { display: none; }
+.pad-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.pad-note {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.pad-note.saving { color: var(--accent); }
+#pad-text {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  max-height: 300px;
+  padding: 13px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+#pad-text:focus { outline: none; }
+#pad-text::placeholder { color: var(--text-faint); }
+
+@media (max-width: 760px) {
+  #pad-text { min-height: 120px; font-size: 16px; }
+}
+
 /* -------------------------------------------------------------------- game */
 
 .game {

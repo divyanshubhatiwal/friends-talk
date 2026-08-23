@@ -218,6 +218,12 @@
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
           </svg>
         </button>
+        <button class="ctrl" id="btn-pad" title="Shared notepad" aria-label="Shared notepad" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M4 4a2 2 0 0 1 2-2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>
+            <path d="M14 2v6h6M8 13h8M8 17h5"/>
+          </svg>
+        </button>
         <button class="ctrl" id="btn-game" title="Play tic-tac-toe" aria-label="Play tic-tac-toe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
@@ -240,6 +246,15 @@
             <button id="btn-block" class="danger">Block permanently</button>
           </div>
         </div>
+      </div>
+
+      <div class="pad" id="pad-wrap" hidden>
+        <div class="pad-head">
+          <span>Shared notepad</span>
+          <span class="pad-note" id="pad-note">Both of you can type here</span>
+        </div>
+        <textarea id="pad-text" spellcheck="false"
+          placeholder="Type here — the other person sees it as you type. Handy for spelling a word, a link, or a phrase you are practising."></textarea>
       </div>
 
       <div class="game" id="game-wrap" hidden>
