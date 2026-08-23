@@ -1304,8 +1304,13 @@
     if (names.length) store.write('friendNames', names);
     renderFriends(names.length ? names : store.read('friendNames', []));
 
+    // Deliberately not surfaced to the user. Whether the server reached its
+    // database is an operator concern: a visitor cannot act on it, and a line
+    // about storage in the middle of a conversation is alarming noise. The
+    // signal still exists where an operator will look — the boot log, and
+    // `persistent` in /api/stats.
     if (payload && payload.persistent === false) {
-      systemMessage('Running without a database — friends and blocks will not survive a restart.');
+      console.warn('[friends-talk] server is running without persistent storage');
     }
   });
 
