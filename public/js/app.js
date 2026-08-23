@@ -923,10 +923,20 @@
     if (reason !== 'teardown') toast('Stopped sharing your screen');
   }
 
+  /**
+   * The sharer's own view is deliberately small.
+   *
+   * They already have the screen in front of them — a large mirror of it just
+   * takes space away from the call. This is a confirmation strip, not a viewer,
+   * so it shows a thumbnail and no maximize control.
+   */
   function showLocalScreen() {
     el.screenWrap.hidden = false;
+    el.screenWrap.classList.add('is-sharing');
+    el.screenWrap.classList.remove('is-viewing');
     el.screenLabel.textContent = 'You are sharing your screen';
     el.screenReport.hidden = true;
+    el.screenFull.hidden = true;
     el.screenVideo.srcObject = screenStream;
     el.screenBtn.classList.add('active');
     el.screenBtn.setAttribute('aria-pressed', 'true');
@@ -940,13 +950,23 @@
     el.screenBtn.setAttribute('aria-pressed', 'false');
   }
 
+  /**
+   * The watcher's view is the one that matters.
+   *
+   * This person cannot see the screen any other way, so it gets the room: a
+   * large frame, the maximize control, and the report button. It takes over
+   * from any self-preview that was showing.
+   */
   function showRemoteScreen(stream) {
     watchingScreen = true;
     el.screenWrap.hidden = false;
+    el.screenWrap.classList.add('is-viewing');
+    el.screenWrap.classList.remove('is-sharing');
     el.screenLabel.textContent = `${state.partner?.name || 'They'} is sharing their screen`;
     el.screenReport.hidden = false;
+    el.screenFull.hidden = false;
     el.screenVideo.srcObject = stream;
-    toast('They started sharing their screen');
+    toast('They started sharing — press maximize for a full view');
   }
 
   function hideRemoteScreen() {

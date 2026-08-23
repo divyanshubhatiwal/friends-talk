@@ -597,6 +597,16 @@ select[multiple] option { padding: 6px 8px; border-radius: 6px; }
   cursor: zoom-in;
 }
 
+/* Sharing: a confirmation thumbnail. You already have this screen in front of
+   you, so mirroring it back at full size only steals room from the call. */
+.screen.is-sharing { width: min(320px, 100%); }
+.screen.is-sharing #screen-video { max-height: 116px; cursor: default; }
+.screen.is-sharing .maximize-btn { display: none; }
+
+/* Watching: this is the only way to see it, so it gets the space. */
+.screen.is-viewing { width: min(820px, 100%); }
+.screen.is-viewing #screen-video { max-height: 60vh; }
+
 .maximize-btn {
   position: absolute;
   right: 10px;
