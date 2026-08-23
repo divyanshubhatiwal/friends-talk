@@ -38,7 +38,10 @@
     translateTo: null,
     groupRoom: null,
     groupCapacity: 5,
-    selfName: 'You'
+    selfName: 'You',
+    speakIncoming: false,
+    speakTyped: false,
+    callbackToken: null
   };
 
   let pc = null;
@@ -119,7 +122,11 @@
     translateTo: $('translate-to'), captionBar: $('caption-bar'),
     captionThem: $('caption-them'), captionMe: $('caption-me'),
     roster: $('roster'), rosterHead: $('roster-head'), rosterList: $('roster-list'),
-    modeHint: $('mode-hint')
+    modeHint: $('mode-hint'),
+    speakIncoming: $('speak-incoming'), speakTyped: $('speak-typed'),
+    speechHint: $('speech-hint'),
+    ringModal: $('ring-modal'), ringName: $('ring-name'), ringSub: $('ring-sub'),
+    ringAvatar: $('ring-avatar'), ringAccept: $('ring-accept'), ringDecline: $('ring-decline')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -321,8 +328,17 @@
     renderHistory();
   }
 
-  /** Shared row builder so the two lists cannot drift apart visually. */
-  function listRow(name, sub) {
+  const ICON_CALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/></svg>';
+  const ICON_BLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>';
+
+  /**
+   * Shared row builder so the two lists cannot drift apart visually.
+   *
+   * `target` identifies who the row is about: a friend carries a client id
+   * (exchanged by mutual consent), while someone from the recent list carries
+   * only an opaque token, so calling them back never reveals who they are.
+   */
+  function listRow(name, sub, target) {
     const row = document.createElement('div');
     row.className = 'list-item';
 
@@ -344,7 +360,51 @@
     }
 
     row.append(avatar, body);
+
+    if (target && (target.token || target.clientId)) {
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const call = document.createElement('button');
+      call.className = 'row-btn call';
+      call.type = 'button';
+      call.title = `Call ${name}`;
+      call.setAttribute('aria-label', `Call ${name}`);
+      call.innerHTML = ICON_CALL;
+      call.addEventListener('click', () => ringPerson({ ...target, name }));
+
+      const block = document.createElement('button');
+      block.className = 'row-btn block';
+      block.type = 'button';
+      block.title = `Block ${name}`;
+      block.setAttribute('aria-label', `Block ${name}`);
+      block.innerHTML = ICON_BLOCK;
+      block.addEventListener('click', () => {
+        if (!confirm(`Block ${name}? You will never be matched with them again.`)) return;
+        socket.emit('block:client', target);
+        removeFromLists(target);
+        toast(`${name} blocked`, 'ok');
+      });
+
+      actions.append(call, block);
+      row.appendChild(actions);
+    }
     return row;
+  }
+
+  /** Drops a blocked person from both local lists straight away. */
+  function removeFromLists(target) {
+    const history = store.read('history', [])
+      .filter((item) => !(target.token && item.token === target.token));
+    store.write('history', history);
+
+    if (target.clientId) {
+      const friends = store.read('friendList', [])
+        .filter((f) => f.clientId !== target.clientId);
+      store.write('friendList', friends);
+    }
+    renderHistory();
+    renderFriends(store.read('friendList', []));
   }
 
   function renderEmpty(target, message) {
@@ -364,19 +424,27 @@
     el.history.innerHTML = '';
     for (const item of list) {
       const when = new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      el.history.appendChild(
-        listRow(item.name, `${countryLabel(item.country)} · ${when} · ${formatDuration(item.duration)}`)
-      );
+      el.history.appendChild(listRow(
+        item.name,
+        `${countryLabel(item.country)} · ${when} · ${formatDuration(item.duration)}`,
+        item.token ? { token: item.token } : null
+      ));
     }
   }
 
-  function renderFriends(names) {
-    if (!names || !names.length) {
+  function renderFriends(friends) {
+    if (!friends || !friends.length) {
       renderEmpty(el.friends, 'Add someone during a call and they will appear here.');
       return;
     }
     el.friends.innerHTML = '';
-    for (const name of names) el.friends.appendChild(listRow(name, null));
+    for (const friend of friends) {
+      el.friends.appendChild(listRow(
+        friend.name,
+        null,
+        friend.clientId ? { clientId: friend.clientId } : null
+      ));
+    }
   }
 
   function formatDuration(ms) {
@@ -726,6 +794,147 @@
     }
   }
 
+  // ------------------------------------------------------------- speech out
+
+  /**
+   * Reads text aloud on this device.
+   *
+   * Synthesis happens in the listener's browser rather than on the server, so
+   * translated speech costs nothing per minute, transfers no audio, and adds
+   * only a network hop. It also means it keeps working when the speech provider
+   * is unreachable, which is the difference between a degraded feature and a
+   * broken one.
+   */
+  const speech = {
+    supported: 'speechSynthesis' in window,
+    voices: [],
+
+    load() {
+      if (!this.supported) return;
+      this.voices = speechSynthesis.getVoices();
+      // Voices populate asynchronously in most browsers.
+      speechSynthesis.addEventListener('voiceschanged', () => {
+        this.voices = speechSynthesis.getVoices();
+      });
+    },
+
+    /** Best voice for a language tag, falling back to the browser default. */
+    voiceFor(lang) {
+      if (!lang || !this.voices.length) return null;
+      const exact = this.voices.find((v) => v.lang?.toLowerCase().startsWith(lang.toLowerCase()));
+      return exact || null;
+    },
+
+    say(text, lang) {
+      if (!this.supported || !text) return;
+      // A backlog of queued speech is worse than silence — drop what is stale.
+      if (speechSynthesis.speaking && speechSynthesis.pending) speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voice = this.voiceFor(lang);
+      if (voice) utterance.voice = voice;
+      if (lang) utterance.lang = voice?.lang || lang;
+      utterance.rate = 1.02;
+      speechSynthesis.speak(utterance);
+    },
+
+    stop() {
+      if (this.supported) speechSynthesis.cancel();
+    }
+  };
+
+  // Somebody typed, and this device reads it out.
+  socket.on('spoken', ({ text, author, lang }) => {
+    addMessage({ from: 'them', text: author ? `${author}: ${text}` : text });
+    speech.say(text, state.translateTo || lang || state.language);
+  });
+
+  el.speakIncoming.addEventListener('change', () => {
+    state.speakIncoming = el.speakIncoming.checked;
+    store.write('speakIncoming', state.speakIncoming);
+    if (!state.speakIncoming) speech.stop();
+  });
+
+  el.speakTyped.addEventListener('change', () => {
+    state.speakTyped = el.speakTyped.checked;
+    store.write('speakTyped', state.speakTyped);
+  });
+
+  // ------------------------------------------------------- calling someone
+
+  let activeRing = null;
+
+  function ringPerson({ token, clientId, name }) {
+    if (state.phase !== 'idle') {
+      toast('Hang up first, then call them', 'err');
+      return;
+    }
+    socket.emit('call:ring', token ? { token } : { clientId });
+    setStatus(`Calling <strong>${escapeHtml(name || 'them')}</strong>…`);
+  }
+
+  socket.on('call:ringing', ({ ringId, name }) => {
+    activeRing = ringId;
+    setStatus(`Ringing <strong>${escapeHtml(name)}</strong>…`);
+    toast(`Calling ${name}`);
+  });
+
+  socket.on('call:incoming', async ({ ringId, name, country }) => {
+    activeRing = ringId;
+    el.ringName.textContent = `${name} is calling`;
+    el.ringSub.textContent = country && country !== 'XX'
+      ? `From ${countryLabel(country)}`
+      : 'They want to talk to you.';
+    el.ringAvatar.textContent = (name || '?').charAt(0);
+    if (!el.ringModal.open) el.ringModal.showModal();
+
+    if (window.Notification?.permission === 'granted' && document.hidden) {
+      new Notification('Friends Talk', { body: `${name} is calling you` });
+    }
+  });
+
+  socket.on('call:cancelled', () => {
+    activeRing = null;
+    if (el.ringModal.open) el.ringModal.close();
+    toast('The caller hung up');
+  });
+
+  socket.on('call:failed', ({ reason, name }) => {
+    activeRing = null;
+    if (el.ringModal.open) el.ringModal.close();
+    const messages = {
+      unavailable: `${name || 'They'} is not available right now`,
+      no_answer: `${name || 'They'} did not answer`,
+      declined: 'They declined the call',
+      expired: 'That contact has expired — you can only call back for a while',
+      not_a_friend: 'You can only call people who accepted your friend request',
+      blocked: 'You blocked this person',
+      no_target: 'Nobody to call'
+    };
+    toast(messages[reason] || 'Could not connect the call', 'err');
+    if (state.phase === 'idle') setStatus('Press call to meet someone new.');
+  });
+
+  el.ringAccept.addEventListener('click', async () => {
+    if (!activeRing) return;
+    try {
+      await ensureMic();
+      if (audioCtx?.state === 'suspended') await audioCtx.resume();
+    } catch {
+      toast('Microphone access is required to answer', 'err');
+      return;
+    }
+    socket.emit('call:accept', { ringId: activeRing });
+    el.ringModal.close();
+    activeRing = null;
+  });
+
+  el.ringDecline.addEventListener('click', () => {
+    if (activeRing) socket.emit('call:decline', { ringId: activeRing });
+    el.ringModal.close();
+    activeRing = null;
+  });
+
   // ----------------------------------------------------------- group rooms
 
   /**
@@ -1051,9 +1260,12 @@
         name: state.partner?.name || 'Stranger',
         country: state.partner?.country || 'XX',
         at: Date.now(),
-        duration: Date.now() - state.startedAt
+        duration: Date.now() - state.startedAt,
+        // Lets this person be rung again without ever storing who they are.
+        token: state.callbackToken || null
       });
     }
+    state.callbackToken = null;
     closePeer();
     stopGroup();
     stopViz();
@@ -1221,9 +1433,17 @@
   function sendChat() {
     const text = el.chatInput.value.trim();
     if (!text) return;
-    // Group chat fans out to the whole room; the typing indicator is one-to-one
-    // only, since five people typing would just be noise.
-    socket.emit(state.groupRoom ? 'group:chat' : 'chat', { text });
+
+    if (state.speakTyped) {
+      // Everyone else hears this read aloud on their own device, so somebody
+      // who cannot speak can still take part in a voice conversation.
+      socket.emit('speak', { text });
+    } else {
+      // Group chat fans out to the whole room; the typing indicator is
+      // one-to-one only, since five people typing would just be noise.
+      socket.emit(state.groupRoom ? 'group:chat' : 'chat', { text });
+    }
+
     el.chatInput.value = '';
     if (!state.groupRoom) socket.emit('typing', { on: false });
   }
@@ -1299,10 +1519,11 @@
   });
 
   socket.on('hello:ok', (payload) => {
-    // The server list is authoritative — it survives clearing this browser.
-    const names = (payload?.friends || []).map((friend) => friend.name);
-    if (names.length) store.write('friendNames', names);
-    renderFriends(names.length ? names : store.read('friendNames', []));
+    // The server list is authoritative — it survives clearing this browser,
+    // and it carries the client ids that make a friend callable.
+    const friends = (payload?.friends || []).filter((f) => f?.clientId);
+    if (friends.length) store.write('friendList', friends);
+    renderFriends(friends.length ? friends : store.read('friendList', []));
 
     // Deliberately not surfaced to the user. Whether the server reached its
     // database is an operator concern: a visitor cannot act on it, and a line
@@ -1357,6 +1578,7 @@
     state.mode = payload.mode;
     state.initiator = payload.initiator;
     state.partner = payload.partner;
+    state.callbackToken = payload.callbackToken || null;
 
     el.chatLog.innerHTML = '';
     el.partnerCard.classList.add('show');
@@ -1430,6 +1652,12 @@
       note.textContent = `(${payload.original})`;
       target.appendChild(note);
     }
+
+    // Reading the other person's words aloud is what turns captions into
+    // translated speech: they speak their language, you hear yours.
+    if (payload.from === 'them' && state.speakIncoming) {
+      speech.say(payload.text, state.translateTo || state.language);
+    }
   });
 
   socket.on('voice:warning', ({ reason, strikes, limit }) => {
@@ -1446,12 +1674,12 @@
     if (confirm(`${name} wants to add you as a friend. Accept?`)) socket.emit('friend:accept');
   });
 
-  socket.on('friend:added', ({ name }) => {
-    const names = store.read('friendNames', []);
-    if (!names.includes(name)) names.push(name);
-    store.write('friendNames', names);
-    renderFriends(names);
-    toast(`${name} added to friends`, 'ok');
+  socket.on('friend:added', ({ name, clientId }) => {
+    const friends = store.read('friendList', []);
+    if (!friends.some((f) => f.clientId === clientId)) friends.push({ name, clientId });
+    store.write('friendList', friends);
+    renderFriends(friends);
+    toast(`${name} added to friends — you can call them back any time`, 'ok');
   });
 
   socket.on('blocked:ok', ({ clientId }) => {
@@ -1604,6 +1832,17 @@
     el.premium.checked = store.read('premium', false);
     el.genderWrap.hidden = !el.premium.checked;
 
+    speech.load();
+    state.speakIncoming = store.read('speakIncoming', false);
+    state.speakTyped = store.read('speakTyped', false);
+    el.speakIncoming.checked = state.speakIncoming;
+    el.speakTyped.checked = state.speakTyped;
+    if (!speech.supported) {
+      el.speakIncoming.disabled = true;
+      el.speakTyped.disabled = true;
+      el.speechHint.textContent = 'This browser cannot synthesise speech.';
+    }
+
     state.captions = store.read('captions', false);
     el.captionsOn.checked = state.captions;
     el.captionLangs.hidden = !state.captions;
@@ -1617,7 +1856,7 @@
 
     renderInterests();
     renderHistory();
-    renderFriends(store.read('friendNames', []));
+    renderFriends(store.read('friendList', []));
     paintPhase();
     bootAgeGate();
   }

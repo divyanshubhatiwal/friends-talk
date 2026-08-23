@@ -103,6 +103,29 @@ export async function listFriends(clientId) {
   return [...map.entries()].map(([friendId, value]) => ({ clientId: friendId, name: value.name }));
 }
 
+/**
+ * Removes a friendship in both directions.
+ *
+ * Blocking someone you were friends with has to sever the link as well —
+ * leaving them in the friends list would keep offering a call button for
+ * somebody you have just refused to hear from again.
+ */
+export async function removeFriend(clientId, friendId) {
+  if (!clientId || !friendId) return;
+
+  if (db) {
+    await db.collection('friendships').deleteMany({
+      $or: [
+        { clientId, friendId },
+        { clientId: friendId, friendId: clientId }
+      ]
+    });
+    return;
+  }
+  memory.friendships.get(clientId)?.delete(friendId);
+  memory.friendships.get(friendId)?.delete(clientId);
+}
+
 /** Pushes the expiry out whenever two friends actually talk again. */
 export async function touchFriendship(clientId, friendId) {
   if (!db || !clientId || !friendId) return;

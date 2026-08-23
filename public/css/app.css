@@ -688,6 +688,45 @@ dialog.modal::backdrop { background: rgba(3, 6, 12, 0.78); backdrop-filter: blur
 .modal-actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 22px; flex-wrap: wrap; }
 .modal-actions .btn { padding: 10px 18px; font-size: 0.88rem; }
 
+/* --------------------------------------------------------- incoming call */
+
+.ring-body { text-align: center; }
+.ring-avatar {
+  width: 66px; height: 66px;
+  margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #04121a;
+  font-size: 1.6rem;
+  font-weight: 750;
+  animation: ring-pulse 1.8s ease-out infinite;
+}
+@keyframes ring-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-glow); }
+  70%  { box-shadow: 0 0 0 20px rgba(53, 224, 208, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(53, 224, 208, 0); }
+}
+.ring-actions { justify-content: center; }
+.ring-actions .btn { min-width: 118px; }
+
+/* Call and block buttons on a friends or recents row. */
+.list-item .actions { margin-left: auto; display: flex; gap: 5px; flex: none; }
+.row-btn {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  padding: 7px;
+  border: 1px solid var(--border-bright);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.row-btn svg { width: 100%; height: 100%; }
+.row-btn.call:hover { color: var(--ok); border-color: var(--ok); }
+.row-btn.block:hover { color: var(--danger); border-color: var(--danger); }
+
 .toast-host {
   position: fixed;
   bottom: 24px; left: 50%;
@@ -807,6 +846,7 @@ dialog.modal::backdrop { background: rgba(3, 6, 12, 0.78); backdrop-filter: blur
   .ctrl { width: 46px; height: 46px; padding: 12px; }
   .icon-btn { width: 44px; height: 44px; }
   .controls { gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .row-btn { width: 40px; height: 40px; padding: 10px; }
   .seg { padding: 13px 2px; min-height: 44px; }
   .tab { padding: 12px 6px; min-height: 44px; }
   /* These open the sheets — the most-tapped controls on a phone, so they get

@@ -105,6 +105,23 @@
         </div>
       </div>
 
+      <div class="group" id="speech-settings">
+        <label class="group-label">Speech</label>
+        <label class="switch">
+          <span>Read their words aloud</span>
+          <input type="checkbox" id="speak-incoming">
+        </label>
+        <label class="switch">
+          <span>Speak what I type</span>
+          <input type="checkbox" id="speak-typed">
+        </label>
+        <p class="hint" id="speech-hint">
+          Turn both on and you can hold a spoken conversation entirely by
+          typing and reading. Your device does the speaking, so nothing extra
+          is sent anywhere.
+        </p>
+      </div>
+
       <details class="more">
         <summary>More filters</summary>
         <div class="group">
@@ -293,6 +310,19 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="report-cancel">Cancel</button>
       <button class="btn btn-primary" id="report-send">Send report</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ---------------------------------------------------------- incoming call -->
+<dialog class="modal" id="ring-modal">
+  <div class="modal-body ring-body">
+    <div class="ring-avatar" id="ring-avatar">?</div>
+    <h2 id="ring-name">Someone is calling</h2>
+    <p id="ring-sub">They want to talk to you.</p>
+    <div class="modal-actions ring-actions">
+      <button class="btn btn-ghost" id="ring-decline">Decline</button>
+      <button class="btn btn-primary" id="ring-accept">Answer</button>
     </div>
   </div>
 </dialog>

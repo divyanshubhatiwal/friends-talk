@@ -7,6 +7,7 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Server } from 'socket.io';
 
@@ -42,6 +43,55 @@ const groups = new GroupRegistry();
 const peers = new Map();
 /** @type {Map<string, string>} clientId -> socketId, for friend calls */
 const online = new Map();
+
+/** In-flight rings, from the moment someone calls until answer or timeout. */
+const pendingRings = new Map();
+
+/**
+ * Call-back tokens.
+ *
+ * Ringing someone you spoke to earlier needs a way to name them. Handing each
+ * stranger the other's persistent client id would do it, and would also quietly
+ * destroy the anonymity the product is built on: anyone could then recognise a
+ * returning partner across sessions.
+ *
+ * So the server issues an opaque token per pairing instead. The client keeps
+ * the token, the server alone can resolve it back to a client id, and it
+ * expires. Friends are different — they exchanged ids by mutual consent — so
+ * they are callable directly.
+ *
+ * @type {Map<string, {clientId: string, name: string, expires: number}>}
+ */
+const callbackTokens = new Map();
+const CALLBACK_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+function issueCallbackToken(forClientId, name) {
+  const token = randomUUID();
+  callbackTokens.set(token, {
+    clientId: forClientId,
+    name,
+    expires: Date.now() + CALLBACK_TOKEN_TTL_MS
+  });
+  return token;
+}
+
+function resolveCallbackToken(token) {
+  const entry = callbackTokens.get(String(token || ''));
+  if (!entry) return null;
+  if (entry.expires < Date.now()) {
+    callbackTokens.delete(token);
+    return null;
+  }
+  return entry;
+}
+
+// Expired tokens would otherwise accumulate for the life of the process.
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of callbackTokens) {
+    if (entry.expires < now) callbackTokens.delete(token);
+  }
+}, 30 * 60 * 1000).unref();
 
 // A client reported this many times in 24 hours is suspended automatically.
 const REPORT_BAN_THRESHOLD = 5;
@@ -381,6 +431,145 @@ io.on('connection', (socket) => {
     socket.emit('idle');
   });
 
+  // -------------------------------------------------- calling someone back
+
+  /**
+   * Rings a specific person: a friend by client id, or someone from the recent
+   * list by the opaque token issued when they were matched.
+   */
+  socket.on('call:ring', async (payload = {}) => {
+    if (!peer.ageConfirmed) return socket.emit('error:blocked', { reason: 'age_not_confirmed' });
+
+    let targetClientId = null;
+    let targetName = 'Someone';
+
+    if (payload.token) {
+      const entry = resolveCallbackToken(payload.token);
+      if (!entry) return socket.emit('call:failed', { reason: 'expired' });
+      targetClientId = entry.clientId;
+      targetName = entry.name;
+    } else if (payload.clientId) {
+      // Only people who agreed to be friends may be rung by raw id.
+      const friends = await store.listFriends(peer.clientId);
+      const friend = friends.find((f) => f.clientId === payload.clientId);
+      if (!friend) return socket.emit('call:failed', { reason: 'not_a_friend' });
+      targetClientId = friend.clientId;
+      targetName = friend.name;
+    } else {
+      return socket.emit('call:failed', { reason: 'no_target' });
+    }
+
+    if (peer.blocked.has(targetClientId)) return socket.emit('call:failed', { reason: 'blocked' });
+    if (await store.isBanned(peer.clientId)) return socket.emit('error:blocked', { reason: 'suspended' });
+
+    const targetSocketId = isReachable(targetClientId);
+    if (!targetSocketId) return socket.emit('call:failed', { reason: 'unavailable', name: targetName });
+
+    const target = peers.get(targetSocketId);
+    if (target?.blocked.has(peer.clientId)) {
+      // Indistinguishable from being offline on purpose — telling someone they
+      // have been blocked invites them to work around it.
+      return socket.emit('call:failed', { reason: 'unavailable', name: targetName });
+    }
+
+    const ringId = randomUUID();
+    pendingRings.set(ringId, { fromSocket: socket.id, toSocket: targetSocketId, at: Date.now() });
+
+    io.to(targetSocketId).emit('call:incoming', { ringId, name: peer.name, country: peer.country });
+    socket.emit('call:ringing', { ringId, name: targetName });
+
+    // Nobody should hear a phone ring forever.
+    setTimeout(() => {
+      if (!pendingRings.has(ringId)) return;
+      pendingRings.delete(ringId);
+      io.to(socket.id).emit('call:failed', { reason: 'no_answer', name: targetName });
+      io.to(targetSocketId).emit('call:cancelled', { ringId });
+    }, 30000);
+  });
+
+  socket.on('call:accept', (payload = {}) => {
+    const ring = pendingRings.get(String(payload.ringId || ''));
+    if (!ring || ring.toSocket !== socket.id) return;
+    pendingRings.delete(payload.ringId);
+
+    const caller = peers.get(ring.fromSocket);
+    if (!caller) return socket.emit('call:failed', { reason: 'unavailable' });
+
+    // Both sides leave whatever they were doing, then pair as a normal call.
+    matchmaker.dequeue(ring.fromSocket);
+    matchmaker.dequeue(socket.id);
+    caller.mode = 'voice';
+    peer.mode = 'voice';
+    pair(caller, peer);
+  });
+
+  socket.on('call:decline', (payload = {}) => {
+    const ring = pendingRings.get(String(payload.ringId || ''));
+    if (!ring || ring.toSocket !== socket.id) return;
+    pendingRings.delete(payload.ringId);
+    io.to(ring.fromSocket).emit('call:failed', { reason: 'declined' });
+  });
+
+  socket.on('call:cancel', (payload = {}) => {
+    const ring = pendingRings.get(String(payload.ringId || ''));
+    if (!ring || ring.fromSocket !== socket.id) return;
+    pendingRings.delete(payload.ringId);
+    io.to(ring.toSocket).emit('call:cancelled', { ringId: payload.ringId });
+  });
+
+  /** Blocks someone from a list rather than mid-call. */
+  socket.on('block:client', async (payload = {}) => {
+    let targetClientId = null;
+    if (payload.token) {
+      const entry = resolveCallbackToken(payload.token);
+      if (entry) targetClientId = entry.clientId;
+    } else if (payload.clientId) {
+      targetClientId = sanitizeId(payload.clientId);
+    }
+    if (!targetClientId) return socket.emit('call:failed', { reason: 'expired' });
+
+    peer.blocked.add(targetClientId);
+    await store.addBlock(peer.clientId, targetClientId);
+    await store.removeFriend(peer.clientId, targetClientId);
+    socket.emit('blocked:ok', { clientId: targetClientId });
+  });
+
+  // ------------------------------------------------------ typed-to-spoken
+
+  /**
+   * Speaks a typed line into the conversation.
+   *
+   * This is what lets someone who cannot speak take part in a voice room: they
+   * type, and every other participant's browser reads it aloud. The synthesis
+   * happens on each listener's device, so it costs nothing and adds no delay
+   * beyond the network hop.
+   */
+  socket.on('speak', async (payload = {}) => {
+    const text = String(payload.text || '').slice(0, 500).trim();
+    if (!text) return;
+
+    const check = screenText(text);
+    if (check.verdict === VERDICT.BLOCK) {
+      socket.emit('chat:blocked', { reason: check.reason });
+      return;
+    }
+
+    const groupRoom = groups.roomOf(socket.id);
+    if (groupRoom) {
+      for (const member of groupRoom.members.keys()) {
+        if (member === socket.id) continue;
+        io.to(member).emit('spoken', { text, author: peer.name, lang: peer.language });
+      }
+      socket.emit('group:chat', { from: 'me', author: peer.name, text, at: Date.now() });
+      return;
+    }
+
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('spoken', { text, author: peer.name, lang: peer.language });
+    socket.emit('chat', { from: 'me', text, at: Date.now() });
+  });
+
   // WebRTC offer / answer / ICE candidates, relayed verbatim.
   socket.on('signal', (payload = {}) => {
     const partnerId = rooms.partnerOf(socket.id);
@@ -532,6 +721,18 @@ io.on('connection', (socket) => {
     matchmaker.dequeue(socket.id);
     leaveRoom(socket, 'disconnected');
     leaveGroup(socket, 'disconnected');
+
+    // Tear down any ring this socket was either end of, so the other side is
+    // not left listening to a phone that will never be answered.
+    for (const [ringId, ring] of pendingRings) {
+      if (ring.fromSocket !== socket.id && ring.toSocket !== socket.id) continue;
+      pendingRings.delete(ringId);
+      const other = ring.fromSocket === socket.id ? ring.toSocket : ring.fromSocket;
+      io.to(other).emit(ring.fromSocket === socket.id ? 'call:cancelled' : 'call:failed', {
+        ringId,
+        reason: 'unavailable'
+      });
+    }
     if (peer.clientId && online.get(peer.clientId) === socket.id) {
       online.delete(peer.clientId);
     }
@@ -552,16 +753,28 @@ function pair(a, b) {
     mode: room.mode,
     initiator: true,
     partner: { name: b.name, country: b.country },
-    sharedInterests: shared
+    sharedInterests: shared,
+    // Lets a either ring b again later without ever learning b's client id.
+    callbackToken: issueCallbackToken(b.clientId, b.name)
   });
   io.to(b.id).emit('matched', {
     roomId: room.id,
     mode: room.mode,
     initiator: false,
     partner: { name: a.name, country: a.country },
-    sharedInterests: shared
+    sharedInterests: shared,
+    callbackToken: issueCallbackToken(a.clientId, a.name)
   });
   broadcastStats();
+}
+
+/** True when this client is free to receive a ring. */
+function isReachable(clientId) {
+  const socketId = online.get(clientId);
+  if (!socketId) return null;
+  if (rooms.forSocket(socketId)) return null;
+  if (groups.roomOf(socketId)) return null;
+  return socketId;
 }
 
 /**
