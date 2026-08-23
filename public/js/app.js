@@ -35,7 +35,10 @@
     voiceFeatures: false,
     captions: false,
     language: 'en',
-    translateTo: null
+    translateTo: null,
+    groupRoom: null,
+    groupCapacity: 5,
+    selfName: 'You'
   };
 
   let pc = null;
@@ -115,13 +118,21 @@
     captionSettings: $('caption-settings'), captionsOn: $('captions-on'),
     captionLangs: $('caption-langs'), myLanguage: $('my-language'),
     translateTo: $('translate-to'), captionBar: $('caption-bar'),
-    captionThem: $('caption-them'), captionMe: $('caption-me')
+    captionThem: $('caption-them'), captionMe: $('caption-me'),
+    roster: $('roster'), rosterHead: $('roster-head'), rosterList: $('roster-list'),
+    modeHint: $('mode-hint')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
   // binary choice should not be a dropdown. This shim lets the rest of the file
   // keep reading and writing `el.mode.value` as though nothing changed.
   const modeSeg = $('mode-seg');
+
+  const MODE_HINTS = {
+    voice: 'One-to-one voice call with a stranger.',
+    text: 'Start by typing. Either of you can switch it to voice later.',
+    group: 'Join a small room of up to 5 people. Opens one if none has space.'
+  };
 
   function setMode(next) {
     for (const seg of modeSeg.querySelectorAll('.seg')) {
@@ -131,6 +142,7 @@
     }
     state.mode = next;
     store.write('mode', next);
+    if (el.modeHint) el.modeHint.textContent = MODE_HINTS[next] || '';
   }
 
   el.mode = {
@@ -631,6 +643,285 @@
     }
   }
 
+  // ----------------------------------------------------------- group rooms
+
+  /**
+   * One entry per other person in the room: their own peer connection, their
+   * audio element, and the analyser that drives the speaking indicator.
+   *
+   * They are kept separate on purpose. When somebody leaves, only their
+   * connection is torn down — the rest of the room carries on untouched.
+   */
+  const groupPeers = new Map();
+  let speakingRaf = null;
+
+  async function startGroup() {
+    try {
+      await ensureMic();
+      if (audioCtx?.state === 'suspended') await audioCtx.resume();
+    } catch {
+      toast('Microphone access is required for group rooms', 'err');
+      setStatus('Microphone blocked. Allow it in your browser to join a room.');
+      return;
+    }
+
+    state.phase = 'searching';
+    paintPhase();
+    setStatus('Finding a room…');
+    socket.emit('group:join', { interests: state.interests });
+  }
+
+  function createGroupPeer(id, { name, country }) {
+    if (groupPeers.has(id)) return groupPeers.get(id);
+
+    const pc = new RTCPeerConnection({ iceServers: state.iceServers, iceCandidatePoolSize: 4 });
+    const entry = { pc, name, country, audio: null, analyser: null, speaking: false, pending: [] };
+    groupPeers.set(id, entry);
+
+    if (localStream) {
+      for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) socket.emit('group:signal', { to: id, data: { candidate: event.candidate } });
+    };
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      // Each remote stream needs its own element; one shared element would
+      // simply replace whoever was playing.
+      const audio = new Audio();
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      audio.play().catch(() => { /* a user gesture already happened on join */ });
+      entry.audio = audio;
+      entry.analyser = buildSpeakingAnalyser(stream);
+      renderRoster();
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') removeGroupPeer(id);
+      renderRoster();
+    };
+
+    return entry;
+  }
+
+  function buildSpeakingAnalyser(stream) {
+    try {
+      const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      return analyser;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleGroupSignal({ from, data }) {
+    if (!data) return;
+    let entry = groupPeers.get(from);
+
+    // An offer can arrive from somebody we have not built a connection for yet.
+    if (!entry) entry = createGroupPeer(from, { name: 'Someone', country: 'XX' });
+    const { pc } = entry;
+
+    if (data.sdp) {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      for (const candidate of entry.pending) await pc.addIceCandidate(candidate).catch(() => {});
+      entry.pending = [];
+
+      if (data.sdp.type === 'offer') {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('group:signal', { to: from, data: { sdp: pc.localDescription } });
+      }
+      return;
+    }
+
+    if (data.candidate) {
+      const candidate = new RTCIceCandidate(data.candidate);
+      if (pc.remoteDescription?.type) await pc.addIceCandidate(candidate).catch(() => {});
+      else entry.pending.push(candidate);
+    }
+  }
+
+  function removeGroupPeer(id) {
+    const entry = groupPeers.get(id);
+    if (!entry) return;
+    entry.pc.onicecandidate = null;
+    entry.pc.ontrack = null;
+    entry.pc.onconnectionstatechange = null;
+    entry.pc.close();
+    if (entry.audio) {
+      entry.audio.pause();
+      entry.audio.srcObject = null;
+    }
+    groupPeers.delete(id);
+    renderRoster();
+  }
+
+  function stopGroup() {
+    for (const id of [...groupPeers.keys()]) removeGroupPeer(id);
+    if (speakingRaf) cancelAnimationFrame(speakingRaf);
+    speakingRaf = null;
+    el.roster.hidden = true;
+    state.groupRoom = null;
+  }
+
+  function renderRoster() {
+    if (!state.groupRoom) return;
+    const total = groupPeers.size + 1;
+    el.roster.hidden = false;
+    el.rosterHead.textContent = `In this room — ${total} of ${state.groupCapacity}`;
+    el.rosterList.innerHTML = '';
+
+    el.rosterList.appendChild(rosterRow({ name: state.selfName, country: null, you: true }));
+    for (const [id, entry] of groupPeers) {
+      el.rosterList.appendChild(rosterRow({
+        id,
+        name: entry.name,
+        country: entry.country,
+        connected: entry.pc.connectionState === 'connected',
+        speaking: entry.speaking
+      }));
+    }
+  }
+
+  function rosterRow({ id, name, country, you, connected, speaking }) {
+    const li = document.createElement('li');
+    li.className = 'roster-item' + (speaking ? ' speaking' : '');
+    if (id) li.dataset.peer = id;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'roster-avatar';
+    avatar.textContent = (name || '?').charAt(0);
+
+    const body = document.createElement('div');
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = name || 'Someone';
+    body.appendChild(nm);
+    if (country) {
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      sub.textContent = countryLabel(country);
+      body.appendChild(sub);
+    }
+
+    const tail = document.createElement('span');
+    tail.className = you ? 'you' : 'state';
+    tail.textContent = you ? 'you' : (speaking ? 'speaking' : connected ? '' : 'connecting…');
+
+    li.append(avatar, body, tail);
+    return li;
+  }
+
+  /**
+   * Drives the speaking indicator.
+   *
+   * A voice-only room gives no clue who is talking, which makes four people
+   * genuinely hard to follow. Sampling each remote stream's level and lighting
+   * up the matching row is the whole affordance.
+   */
+  function runSpeakingDetection() {
+    if (speakingRaf) return;
+    const data = new Uint8Array(256);
+
+    const frame = () => {
+      let changed = false;
+      for (const [id, entry] of groupPeers) {
+        if (!entry.analyser) continue;
+        entry.analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const speaking = sum / data.length > 8;
+        if (speaking !== entry.speaking) {
+          entry.speaking = speaking;
+          const row = el.rosterList.querySelector(`[data-peer="${id}"]`);
+          if (row) {
+            row.classList.toggle('speaking', speaking);
+            const tail = row.querySelector('.state');
+            if (tail) tail.textContent = speaking ? 'speaking' : '';
+          } else {
+            changed = true;
+          }
+        }
+      }
+      if (changed) renderRoster();
+      speakingRaf = requestAnimationFrame(frame);
+    };
+    frame();
+  }
+
+  socket.on('group:joined', async (payload) => {
+    state.phase = 'matched';
+    state.groupRoom = payload.roomId;
+    state.groupCapacity = payload.capacity;
+    state.mode = 'group';
+    el.chatLog.innerHTML = '';
+    el.queueNote.hidden = true;
+    paintPhase();
+    startTimer();
+    renderRoster();
+    runViz();
+    runSpeakingDetection();
+
+    setStatus(payload.members.length
+      ? `You joined a room with ${payload.members.length} other ${payload.members.length === 1 ? 'person' : 'people'}`
+      : 'Room opened — waiting for others to join');
+    systemMessage(payload.members.length
+      ? 'You joined the room.'
+      : 'You opened a room. The next person looking for a group will land here.');
+
+    // The arrival offers to everyone already present, so existing members only
+    // ever answer and two peers can never offer each other simultaneously.
+    for (const member of payload.members) {
+      const entry = createGroupPeer(member.id, member);
+      const offer = await entry.pc.createOffer({ offerToReceiveAudio: true });
+      await entry.pc.setLocalDescription(offer);
+      socket.emit('group:signal', { to: member.id, data: { sdp: entry.pc.localDescription } });
+    }
+  });
+
+  socket.on('group:peer-joined', ({ peer, size }) => {
+    // They will send us an offer; just record who they are for the roster.
+    const existing = groupPeers.get(peer.id);
+    if (existing) Object.assign(existing, { name: peer.name, country: peer.country });
+    else groupPeers.set(peer.id, { pc: null, name: peer.name, country: peer.country, pending: [], speaking: false });
+    systemMessage(`${peer.name} joined.`);
+    setStatus(`${size} people in this room`);
+    renderRoster();
+  });
+
+  socket.on('group:signal', async (payload) => {
+    const entry = groupPeers.get(payload.from);
+    // A placeholder from group:peer-joined has no connection yet.
+    if (entry && !entry.pc) {
+      const { name, country } = entry;
+      groupPeers.delete(payload.from);
+      createGroupPeer(payload.from, { name, country });
+    }
+    await handleGroupSignal(payload);
+    runSpeakingDetection();
+  });
+
+  socket.on('group:peer-left', ({ id, size }) => {
+    const entry = groupPeers.get(id);
+    if (entry) systemMessage(`${entry.name} left.`);
+    removeGroupPeer(id);
+    setStatus(size > 1 ? `${size} people in this room` : 'Everyone else left — waiting for company');
+  });
+
+  socket.on('group:chat', (message) => {
+    addMessage({
+      from: message.from,
+      text: message.from === 'me' ? message.text : `${message.author}: ${message.text}`
+    });
+  });
+
   // ------------------------------------------------------------ call control
 
   async function startSearch() {
@@ -674,6 +965,7 @@
       });
     }
     closePeer();
+    stopGroup();
     stopViz();
     stopCaptions();
     stopTimer();
@@ -721,9 +1013,15 @@
 
     // An idle screen shows no call controls at all. Disabled buttons are just
     // clutter that tells you what you cannot do.
+    const inGroup = Boolean(state.groupRoom);
     el.controls.hidden = !live;
-    el.mute.hidden = state.mode !== 'voice';
-    el.voice.hidden = state.mode !== 'text';
+    el.mute.hidden = !(state.mode === 'voice' || inGroup);
+    el.voice.hidden = state.mode !== 'text' || inGroup;
+    // Tic-tac-toe is a two-player game and "add friend" targets one partner;
+    // neither has a meaning in a room of five, so both are hidden there.
+    el.game.hidden = inGroup;
+    el.friend.hidden = inGroup;
+    el.next.hidden = inGroup;
     if (!live) closeMoreMenu();
 
     el.chatInput.disabled = !live;
@@ -734,11 +1032,18 @@
   }
 
   el.callBtn.addEventListener('click', () => {
-    if (state.phase === 'idle') return startSearch();
+    if (state.phase === 'idle') {
+      return el.mode.value === 'group' ? startGroup() : startSearch();
+    }
     if (state.phase === 'searching') {
       socket.emit('cancel');
       state.phase = 'idle';
       paintPhase();
+      return;
+    }
+    if (state.groupRoom) {
+      socket.emit('group:leave');
+      endCall('manual');
       return;
     }
     socket.emit('leave');
@@ -814,9 +1119,11 @@
   function sendChat() {
     const text = el.chatInput.value.trim();
     if (!text) return;
-    socket.emit('chat', { text });
+    // Group chat fans out to the whole room; the typing indicator is one-to-one
+    // only, since five people typing would just be noise.
+    socket.emit(state.groupRoom ? 'group:chat' : 'chat', { text });
     el.chatInput.value = '';
-    socket.emit('typing', { on: false });
+    if (!state.groupRoom) socket.emit('typing', { on: false });
   }
 
   el.send.addEventListener('click', sendChat);
@@ -880,6 +1187,7 @@
 
   socket.on('ready', (payload) => {
     state.iceServers = payload.iceServers || [];
+    state.selfName = payload.name || 'You';
     paintStats(payload.stats);
 
     // Caption controls only exist if the server can actually transcribe.

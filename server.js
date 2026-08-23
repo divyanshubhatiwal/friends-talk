@@ -19,6 +19,7 @@ import {
   healthReason as voiceReason
 } from './src/voice.js';
 import { RoomRegistry, newGame, applyMove } from './src/rooms.js';
+import { GroupRegistry, MAX_MEMBERS } from './src/groups.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
 import * as store from './src/storage/repository.js';
@@ -35,6 +36,7 @@ const io = new Server(httpServer, {
 
 const matchmaker = new Matchmaker();
 const rooms = new RoomRegistry();
+const groups = new GroupRegistry();
 
 /** @type {Map<string, object>} socketId -> peer */
 const peers = new Map();
@@ -81,11 +83,14 @@ app.get('/api/stats', (_req, res) => {
 app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 function stats() {
+  const group = groups.stats();
   return {
     online: peers.size,
     waiting: matchmaker.size(),
-    inCall: rooms.size() * 2,
+    inCall: rooms.size() * 2 + group.people,
     rooms: rooms.size(),
+    groupRooms: group.rooms,
+    groupPeople: group.people,
     persistent: store.isPersistent()
   };
 }
@@ -288,6 +293,94 @@ io.on('connection', (socket) => {
     broadcastStats();
   });
 
+  // ------------------------------------------------------------ group rooms
+
+  socket.on('group:join', async (payload = {}) => {
+    if (!peer.ageConfirmed) {
+      socket.emit('error:blocked', { reason: 'age_not_confirmed' });
+      return;
+    }
+    if (await store.isBanned(peer.clientId)) {
+      socket.emit('error:blocked', { reason: 'suspended' });
+      return;
+    }
+
+    // Leave whatever they were in first, so nobody occupies two places.
+    matchmaker.dequeue(socket.id);
+    leaveRoom(socket, 'switched');
+    leaveGroup(socket, 'switched');
+
+    peer.interests = toArray(payload.interests)
+      .map((tag) => String(tag).toLowerCase().replace(/[^a-z0-9 -]/g, '').trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    const room = groups.findOrCreate(peer);
+    const roster = groups.roster(room);
+
+    // The newcomer offers to everyone already present. Making the arrival the
+    // sole initiator removes glare entirely — existing members only ever
+    // answer, so two peers can never send each other an offer at once.
+    socket.emit('group:joined', {
+      roomId: room.id,
+      you: peer.id,
+      members: roster.filter((m) => m.id !== peer.id),
+      capacity: MAX_MEMBERS
+    });
+
+    for (const member of room.members.keys()) {
+      if (member === socket.id) continue;
+      io.to(member).emit('group:peer-joined', {
+        peer: { id: peer.id, name: peer.name, country: peer.country },
+        size: room.members.size
+      });
+    }
+    broadcastStats();
+  });
+
+  // Addressed signaling. One-to-one can assume "the other person"; a mesh
+  // cannot, so every message names its recipient and is checked to be within
+  // the sender's own room.
+  socket.on('group:signal', (payload = {}) => {
+    const room = groups.roomOf(socket.id);
+    if (!room) return;
+    const target = String(payload.to || '');
+    if (!room.members.has(target)) return;
+    io.to(target).emit('group:signal', { from: socket.id, data: payload.data });
+  });
+
+  socket.on('group:chat', async (payload = {}) => {
+    const room = groups.roomOf(socket.id);
+    if (!room) return;
+    const text = String(payload.text || '').slice(0, 2000).trim();
+    if (!text) return;
+
+    const check = screenText(text);
+    if (check.verdict === VERDICT.BLOCK) {
+      socket.emit('chat:blocked', { reason: check.reason });
+      recordReport({ kind: 'auto-group', reason: check.reason, roomId: room.id, clientId: peer.clientId });
+      return;
+    }
+    if (check.verdict === VERDICT.FLAG) {
+      recordReport({ kind: 'auto-group', reason: check.reason, roomId: room.id, clientId: peer.clientId });
+      if (check.warn) socket.emit('chat:warning', { reason: check.reason });
+    }
+
+    for (const member of room.members.keys()) {
+      io.to(member).emit('group:chat', {
+        from: member === socket.id ? 'me' : 'them',
+        author: peer.name,
+        text,
+        at: Date.now()
+      });
+    }
+  });
+
+  socket.on('group:leave', () => {
+    leaveGroup(socket, 'left');
+    socket.emit('idle');
+  });
+
   // WebRTC offer / answer / ICE candidates, relayed verbatim.
   socket.on('signal', (payload = {}) => {
     const partnerId = rooms.partnerOf(socket.id);
@@ -438,6 +531,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     matchmaker.dequeue(socket.id);
     leaveRoom(socket, 'disconnected');
+    leaveGroup(socket, 'disconnected');
     if (peer.clientId && online.get(peer.clientId) === socket.id) {
       online.delete(peer.clientId);
     }
@@ -522,6 +616,27 @@ function startSweep() {
     }
   }, SWEEP_INTERVAL_MS);
   sweepTimer.unref?.();
+}
+
+/**
+ * Removes a peer from their group room and tells the rest.
+ *
+ * Every remaining member has to be told individually, because each one holds
+ * its own peer connection to the leaver and needs to tear that one down while
+ * keeping the others alive.
+ */
+function leaveGroup(socket, reason) {
+  const result = groups.leave(socket.id);
+  if (!result) return;
+
+  for (const member of result.room.members.keys()) {
+    io.to(member).emit('group:peer-left', {
+      id: socket.id,
+      reason,
+      size: result.room.members.size
+    });
+  }
+  broadcastStats();
 }
 
 function leaveRoom(socket, reason) {

@@ -67,7 +67,14 @@
             </svg>
             Text
           </button>
+          <button class="seg" data-mode="group" role="radio" aria-checked="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            Group
+          </button>
         </div>
+        <p class="hint" id="mode-hint">One-to-one voice call with a stranger.</p>
       </div>
 
       <div class="group">
@@ -153,6 +160,11 @@
           <div class="sub" id="partner-sub">—</div>
         </div>
         <div class="timer" id="timer"></div>
+      </div>
+
+      <div class="roster" id="roster" hidden>
+        <p class="roster-head" id="roster-head"></p>
+        <ul class="roster-list" id="roster-list"></ul>
       </div>
 
       <div class="viz" id="viz" aria-hidden="true"></div>
