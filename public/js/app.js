@@ -131,6 +131,7 @@
     screenBtn: $('btn-screen'), screenWrap: $('screen-wrap'), screenVideo: $('screen-video'),
     screenLabel: $('screen-label'), screenStop: $('screen-stop'), screenReport: $('screen-report'),
     screenFull: $('screen-full'), screenFullLabel: $('screen-full-label'),
+    screenMaximize: $('screen-maximize'),
     screenModal: $('screen-modal'), screenAskTitle: $('screen-ask-title'),
     screenAskBody: $('screen-ask-body'), screenAskAccept: $('screen-ask-accept'),
     screenAskDecline: $('screen-ask-decline')
@@ -991,9 +992,23 @@
     el.screenFullLabel.textContent = on ? 'Exit' : 'Fullscreen';
     el.screenFull.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
     el.screenFull.title = el.screenFullLabel.textContent;
+
+    // The overlay control has to say the opposite thing once maximised, or it
+    // reads as a second way to do what has already been done. The arrows point
+    // outward to expand and inward to collapse, so the icon itself changes.
+    el.screenMaximize.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Maximize screen to fullscreen');
+    el.screenMaximize.title = on ? 'Exit fullscreen (or double-click)' : 'Maximize (or double-click)';
+    el.screenMaximize.querySelector('path').setAttribute('d', on ? ICON_COLLAPSE : ICON_EXPAND);
   }
 
+  const ICON_EXPAND = 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7';
+  const ICON_COLLAPSE = 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7';
+
   el.screenFull.addEventListener('click', toggleScreenFullscreen);
+  el.screenMaximize.addEventListener('click', toggleScreenFullscreen);
+  // Double-click is the convention every video player uses, so people try it
+  // before they look for a button.
+  el.screenVideo.addEventListener('dblclick', toggleScreenFullscreen);
   document.addEventListener('fullscreenchange', paintFullscreenButton);
   document.addEventListener('webkitfullscreenchange', paintFullscreenButton);
 

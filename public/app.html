@@ -268,7 +268,14 @@
             <button class="screen-btn" id="screen-stop">Stop</button>
           </div>
         </div>
-        <video id="screen-video" autoplay playsinline muted></video>
+        <div class="screen-stage">
+          <video id="screen-video" autoplay playsinline muted></video>
+          <button class="maximize-btn" id="screen-maximize" title="Maximize (or double-click)" aria-label="Maximize screen to fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="pad" id="pad-wrap" hidden>
