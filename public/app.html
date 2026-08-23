@@ -218,6 +218,11 @@
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
           </svg>
         </button>
+        <button class="ctrl" id="btn-screen" title="Share your screen" aria-label="Share your screen" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+          </svg>
+        </button>
         <button class="ctrl" id="btn-pad" title="Shared notepad" aria-label="Shared notepad" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M4 4a2 2 0 0 1 2-2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>
@@ -246,6 +251,18 @@
             <button id="btn-block" class="danger">Block permanently</button>
           </div>
         </div>
+      </div>
+
+      <div class="screen" id="screen-wrap" hidden>
+        <div class="screen-head">
+          <span class="live-dot"></span>
+          <span id="screen-label">Screen</span>
+          <div class="screen-actions">
+            <button class="screen-btn danger" id="screen-report" hidden>Report</button>
+            <button class="screen-btn" id="screen-stop">Stop</button>
+          </div>
+        </div>
+        <video id="screen-video" autoplay playsinline muted></video>
       </div>
 
       <div class="pad" id="pad-wrap" hidden>
@@ -325,6 +342,24 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="report-cancel">Cancel</button>
       <button class="btn btn-primary" id="report-send">Send report</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ------------------------------------------------- screen share consent -->
+<dialog class="modal" id="screen-modal">
+  <div class="modal-body">
+    <h2 id="screen-ask-title">Let them share their screen?</h2>
+    <p id="screen-ask-body">
+      They want to show you their screen. You can stop watching at any time.
+    </p>
+    <p class="warn-note">
+      You are talking to a stranger. If anything you see is abusive or explicit,
+      press Report — it ends the call and suspends them.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="screen-ask-decline">No thanks</button>
+      <button class="btn btn-primary" id="screen-ask-accept">Allow</button>
     </div>
   </div>
 </dialog>

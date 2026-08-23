@@ -534,6 +534,64 @@ io.on('connection', (socket) => {
     socket.emit('blocked:ok', { clientId: targetClientId });
   });
 
+  // --------------------------------------------------------- screen share
+
+  /**
+   * Screen sharing is consent-gated in both directions.
+   *
+   * Everywhere else in this app the visual channel is closed, which is the
+   * whole reason it is safer than camera roulette. Opening it for a stranger
+   * needs the receiver to actively agree first — a stream that simply appears
+   * would hand any anonymous participant a projector.
+   */
+  socket.on('screen:request', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('screen:request', { name: peer.name });
+  });
+
+  socket.on('screen:accept', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('screen:accepted');
+  });
+
+  socket.on('screen:decline', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('screen:declined');
+  });
+
+  socket.on('screen:stopped', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) io.to(partnerId).emit('screen:stopped');
+  });
+
+  /**
+   * A report raised specifically about what is on screen.
+   *
+   * Recorded separately from ordinary reports because it is the one moderation
+   * path with no automated screening behind it — nothing inspects a live video
+   * stream — so a human signal is all there is.
+   */
+  socket.on('screen:report', async () => {
+    const room = rooms.forSocket(socket.id);
+    const partner = peers.get(rooms.partnerOf(socket.id));
+    await recordReport({
+      kind: 'screen',
+      reason: 'screen_share_abuse',
+      roomId: room?.id || null,
+      clientId: partner?.clientId || null,
+      reportedBy: peer.clientId
+    });
+    if (partner?.clientId) {
+      await store.banClient(partner.clientId, { reason: 'screen_share_report', seconds: 60 * 60 });
+      const partnerSocket = online.get(partner.clientId);
+      if (partnerSocket) io.to(partnerSocket).emit('error:blocked', { reason: 'suspended' });
+    }
+    socket.emit('report:ok');
+  });
+
   // ------------------------------------------------------- shared notepad
 
   /**

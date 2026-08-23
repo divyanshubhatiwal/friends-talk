@@ -127,7 +127,12 @@
     speechHint: $('speech-hint'),
     ringModal: $('ring-modal'), ringName: $('ring-name'), ringSub: $('ring-sub'),
     ringAvatar: $('ring-avatar'), ringAccept: $('ring-accept'), ringDecline: $('ring-decline'),
-    padBtn: $('btn-pad'), padWrap: $('pad-wrap'), padText: $('pad-text'), padNote: $('pad-note')
+    padBtn: $('btn-pad'), padWrap: $('pad-wrap'), padText: $('pad-text'), padNote: $('pad-note'),
+    screenBtn: $('btn-screen'), screenWrap: $('screen-wrap'), screenVideo: $('screen-video'),
+    screenLabel: $('screen-label'), screenStop: $('screen-stop'), screenReport: $('screen-report'),
+    screenModal: $('screen-modal'), screenAskTitle: $('screen-ask-title'),
+    screenAskBody: $('screen-ask-body'), screenAskAccept: $('screen-ask-accept'),
+    screenAskDecline: $('screen-ask-decline')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -729,6 +734,13 @@
     };
 
     pc.ontrack = (event) => {
+      // The same connection now carries two kinds of track, so this can no
+      // longer assume everything arriving is the voice stream.
+      if (event.track.kind === 'video') {
+        showRemoteScreen(new MediaStream([event.track]));
+        event.track.addEventListener('ended', hideRemoteScreen);
+        return;
+      }
       el.remote.srcObject = event.streams[0];
       el.remote.play().catch(() => { /* autoplay policy — user gesture already happened */ });
     };
@@ -794,6 +806,171 @@
       }
     }
   }
+
+  // ---------------------------------------------------------- screen share
+
+  /**
+   * Sharing a screen over the existing call.
+   *
+   * Adding a track to a live peer connection does not take effect on its own —
+   * the connection has to be renegotiated with a fresh offer. Only the person
+   * sharing ever starts that renegotiation, so the two sides can never send
+   * each other an offer at the same time.
+   *
+   * The receiver must agree first. Everywhere else in this app the visual
+   * channel is closed, which is exactly why it is safer than camera roulette;
+   * opening it for a stranger is not something that should happen without them
+   * saying yes.
+   */
+  let screenStream = null;
+  let screenSender = null;
+  let watchingScreen = false;
+
+  function screenSupported() {
+    return Boolean(navigator.mediaDevices?.getDisplayMedia);
+  }
+
+  el.screenBtn.addEventListener('click', () => {
+    if (screenStream) return stopSharing('manual');
+    if (!pc || pc.connectionState !== 'connected') {
+      toast('Wait until the call is connected', 'err');
+      return;
+    }
+    if (!screenSupported()) {
+      toast('This browser cannot share a screen', 'err');
+      return;
+    }
+    socket.emit('screen:request');
+    toast('Asked to share your screen');
+    el.screenBtn.disabled = true;
+    setTimeout(() => { el.screenBtn.disabled = false; }, 4000);
+  });
+
+  // They asked to show us their screen.
+  socket.on('screen:request', ({ name }) => {
+    el.screenAskTitle.textContent = `Let ${name} share their screen?`;
+    el.screenAskBody.textContent =
+      `${name} wants to show you their screen. You can stop watching at any time.`;
+    if (!el.screenModal.open) el.screenModal.showModal();
+  });
+
+  el.screenAskAccept.addEventListener('click', () => {
+    el.screenModal.close();
+    socket.emit('screen:accept');
+  });
+
+  el.screenAskDecline.addEventListener('click', () => {
+    el.screenModal.close();
+    socket.emit('screen:decline');
+  });
+
+  socket.on('screen:declined', () => {
+    el.screenBtn.disabled = false;
+    toast('They declined the screen share', 'err');
+  });
+
+  // They agreed — pick a surface and renegotiate the connection.
+  socket.on('screen:accepted', async () => {
+    el.screenBtn.disabled = false;
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 12 },   // plenty for a document, far cheaper than 30
+        audio: false
+      });
+    } catch {
+      toast('Screen share cancelled');
+      socket.emit('screen:stopped');
+      return;
+    }
+
+    const [track] = screenStream.getVideoTracks();
+    // Stopping from the browser's own "stop sharing" bar must tear down too.
+    track.addEventListener('ended', () => stopSharing('browser'));
+
+    screenSender = pc.addTrack(track, screenStream);
+    await renegotiate();
+
+    showLocalScreen();
+    toast('Sharing your screen', 'ok');
+  });
+
+  /**
+   * Fresh offer after the track set changed.
+   *
+   * Only ever called by the side that is sharing, which is what keeps this from
+   * colliding with the other peer doing the same thing.
+   */
+  async function renegotiate() {
+    if (!pc) return;
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', { data: { sdp: pc.localDescription } });
+  }
+
+  async function stopSharing(reason) {
+    if (!screenStream) return;
+    for (const track of screenStream.getTracks()) track.stop();
+    if (screenSender && pc) {
+      try { pc.removeTrack(screenSender); } catch { /* connection already gone */ }
+      await renegotiate();
+    }
+    screenStream = null;
+    screenSender = null;
+    hideLocalScreen();
+    socket.emit('screen:stopped');
+    if (reason !== 'teardown') toast('Stopped sharing your screen');
+  }
+
+  function showLocalScreen() {
+    el.screenWrap.hidden = false;
+    el.screenLabel.textContent = 'You are sharing your screen';
+    el.screenReport.hidden = true;
+    el.screenVideo.srcObject = screenStream;
+    el.screenBtn.classList.add('active');
+    el.screenBtn.setAttribute('aria-pressed', 'true');
+  }
+
+  function hideLocalScreen() {
+    if (watchingScreen) return; // still receiving theirs
+    el.screenWrap.hidden = true;
+    el.screenVideo.srcObject = null;
+    el.screenBtn.classList.remove('active');
+    el.screenBtn.setAttribute('aria-pressed', 'false');
+  }
+
+  function showRemoteScreen(stream) {
+    watchingScreen = true;
+    el.screenWrap.hidden = false;
+    el.screenLabel.textContent = `${state.partner?.name || 'They'} is sharing their screen`;
+    el.screenReport.hidden = false;
+    el.screenVideo.srcObject = stream;
+    toast('They started sharing their screen');
+  }
+
+  function hideRemoteScreen() {
+    watchingScreen = false;
+    if (screenStream) return showLocalScreen(); // ours is still going
+    el.screenWrap.hidden = true;
+    el.screenVideo.srcObject = null;
+  }
+
+  socket.on('screen:stopped', hideRemoteScreen);
+
+  el.screenStop.addEventListener('click', () => {
+    if (screenStream) return stopSharing('manual');
+    hideRemoteScreen();
+    toast('Stopped watching');
+  });
+
+  // The only moderation path for a live screen is a human pressing this.
+  el.screenReport.addEventListener('click', () => {
+    if (!confirm('Report what they are showing? This ends the call and suspends them.')) return;
+    socket.emit('screen:report');
+    hideRemoteScreen();
+    socket.emit('leave');
+    endCall('manual');
+    toast('Reported — they have been suspended', 'ok');
+  });
 
   // -------------------------------------------------------- shared notepad
 
@@ -1347,6 +1524,10 @@
       });
     }
     state.callbackToken = null;
+    stopSharing('teardown');
+    watchingScreen = false;
+    el.screenWrap.hidden = true;
+    el.screenVideo.srcObject = null;
     closePeer();
     stopGroup();
     stopViz();
@@ -1406,6 +1587,9 @@
     el.game.hidden = inGroup;
     el.friend.hidden = inGroup;
     el.next.hidden = inGroup;
+    // Sharing into a mesh needs the track added to every peer connection
+    // separately; until that is built, screen share is one-to-one only.
+    el.screenBtn.hidden = inGroup || state.mode === 'text';
     if (!live) closeMoreMenu();
 
     el.chatInput.disabled = !live;
