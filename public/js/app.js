@@ -122,7 +122,7 @@
     translateTo: $('translate-to'), captionBar: $('caption-bar'),
     captionThem: $('caption-them'), captionMe: $('caption-me'),
     roster: $('roster'), rosterHead: $('roster-head'), rosterList: $('roster-list'),
-    modeHint: $('mode-hint'),
+    modeHint: $('mode-hint'), screenSupportHint: $('screen-support-hint'),
     speakIncoming: $('speak-incoming'), speakTyped: $('speak-typed'),
     speechHint: $('speech-hint'),
     ringModal: $('ring-modal'), ringName: $('ring-name'), ringSub: $('ring-sub'),
@@ -828,8 +828,25 @@
   let screenSender = null;
   let watchingScreen = false;
 
+  /**
+   * Whether this device can *send* a screen.
+   *
+   * getDisplayMedia does not exist on any mobile browser — not iOS Safari, not
+   * Chrome or Firefox on Android, and not Chrome for iOS, which is Safari's
+   * engine wearing a different badge. Apple and Google do not expose screen
+   * capture to web pages on phones at all, so there is nothing to fall back to.
+   *
+   * Receiving is unaffected: a phone plays an incoming screen perfectly well.
+   * So the control to start a share is hidden rather than left to fail, and the
+   * viewer path stays fully available on mobile.
+   */
   function screenSupported() {
-    return Boolean(navigator.mediaDevices?.getDisplayMedia);
+    return typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+  }
+
+  function isMobileBrowser() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)); // iPadOS
   }
 
   el.screenBtn.addEventListener('click', () => {
@@ -1678,7 +1695,9 @@
     el.next.hidden = inGroup;
     // Sharing into a mesh needs the track added to every peer connection
     // separately; until that is built, screen share is one-to-one only.
-    el.screenBtn.hidden = inGroup || state.mode === 'text';
+    // Hidden outright where the browser cannot capture a screen, rather than
+    // offered and then failing when pressed.
+    el.screenBtn.hidden = inGroup || state.mode === 'text' || !screenSupported();
     if (!live) closeMoreMenu();
 
     el.chatInput.disabled = !live;
@@ -2186,6 +2205,15 @@
     el.autoCall.checked = state.autoCall;
     el.premium.checked = store.read('premium', false);
     el.genderWrap.hidden = !el.premium.checked;
+
+    // Say plainly why the share control is absent, so its absence does not read
+    // as the app being broken on this device.
+    if (!screenSupported()) {
+      el.screenSupportHint.hidden = false;
+      el.screenSupportHint.textContent = isMobileBrowser()
+        ? 'Phones and tablets cannot share a screen — no mobile browser allows it. You can still watch a screen someone else shares.'
+        : 'This browser cannot share a screen. You can still watch one that is shared with you.';
+    }
 
     speech.load();
     state.speakIncoming = store.read('speakIncoming', false);
