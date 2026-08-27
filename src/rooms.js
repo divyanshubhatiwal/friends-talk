@@ -94,3 +94,45 @@ export function applyMove(game, playerId, cell) {
   }
   return { ok: true, game };
 }
+
+export function newPitchMatchGame(firstPlayerId, secondPlayerId) {
+  // Generate a random target pitch between 110Hz (low male) and 270Hz (high female)
+  const targetPitch = 110 + Math.floor(Math.random() * 160);
+  return {
+    type: 'pitch-match',
+    targetPitch,
+    scores: { [firstPlayerId]: null, [secondPlayerId]: null },
+    turn: firstPlayerId,
+    winner: null,
+    finished: false
+  };
+}
+
+export function submitPitchScore(game, playerId, difference) {
+  if (!game || game.finished) return { ok: false };
+  if (game.turn !== playerId) return { ok: false };
+  if (typeof difference !== 'number' || isNaN(difference)) return { ok: false };
+
+  game.scores[playerId] = difference;
+
+  const partnerId = Object.keys(game.scores).find((id) => id !== playerId);
+  if (game.scores[partnerId] !== null) {
+    // Both players have submitted their scores!
+    const diffA = game.scores[playerId];
+    const diffB = game.scores[partnerId];
+
+    if (Math.abs(diffA - diffB) < 0.1) {
+      game.winner = 'draw';
+    } else {
+      // The one with the smaller absolute pitch difference wins!
+      game.winner = diffA < diffB ? playerId : partnerId;
+    }
+    game.finished = true;
+  } else {
+    // Pass turn to the other player
+    game.turn = partnerId;
+  }
+
+  return { ok: true, game };
+}
+

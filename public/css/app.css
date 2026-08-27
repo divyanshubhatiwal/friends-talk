@@ -94,6 +94,11 @@ body.app-body {
 .bar-btn svg { width: 100%; height: 100%; }
 .bar-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 
+/* The other bar buttons are mobile-only, but installing is offered on desktop
+   too, so this one shows wherever the browser has actually said it can. */
+.install-btn:not([hidden]) { display: block; color: var(--accent); }
+.install-btn:not([hidden]):hover { background: rgba(53, 224, 208, 0.12); }
+
 /* ------------------------------------------------------------------ layout */
 
 .app-main {
@@ -1112,3 +1117,311 @@ dialog.modal::backdrop { background: rgba(8, 10, 16, 0.82); backdrop-filter: blu
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ================================================= Light Theme Overrides */
+
+[data-theme="light"] .app-bar {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+}
+
+[data-theme="light"] .presence {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .bar-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+}
+
+/* Inputs */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] select {
+  background: #f0f2f5;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme="light"] .segmented {
+  background: #f0f2f5;
+}
+
+/* Tabs */
+[data-theme="light"] .tab.is-active {
+  color: var(--text);
+}
+
+/* Controls hover */
+[data-theme="light"] .ctrl:hover {
+  color: var(--text);
+}
+
+/* Menu */
+[data-theme="light"] .menu button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+/* Segmented hover */
+[data-theme="light"] .seg:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* More filters summary */
+[data-theme="light"] .more summary:hover {
+  color: var(--text);
+}
+
+/* Partner avatar, roster avatar */
+[data-theme="light"] .partner-avatar,
+[data-theme="light"] .roster-avatar {
+  color: #ffffff;
+}
+
+/* Chat bubbles */
+[data-theme="light"] .msg.me {
+  color: #ffffff;
+}
+[data-theme="light"] .msg.them {
+  color: var(--text);
+}
+
+/* Composer input */
+[data-theme="light"] .composer input[type="text"] {
+  background: #f0f2f5;
+  color: var(--text);
+}
+
+/* Icon buttons */
+[data-theme="light"] .icon-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+[data-theme="light"] .icon-btn.primary:not(:disabled) {
+  color: #ffffff;
+}
+
+/* List items */
+[data-theme="light"] .list-item .nm {
+  color: var(--text);
+}
+[data-theme="light"] .list-item .avatar {
+  color: #ffffff;
+}
+
+/* Modals */
+[data-theme="light"] dialog.modal {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px);
+}
+[data-theme="light"] dialog.modal::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+[data-theme="light"] .modal-body h2 {
+  color: var(--text);
+}
+
+/* Ring avatar */
+[data-theme="light"] .ring-avatar {
+  color: #ffffff;
+}
+
+/* Screen share */
+[data-theme="light"] .screen {
+  background: #1a1d26;
+}
+[data-theme="light"] #screen-video {
+  background: #1a1d26;
+}
+
+/* Call button always keeps white text regardless of theme */
+[data-theme="light"] .call-btn {
+  color: #ffffff;
+}
+[data-theme="light"] .call-icon {
+  color: #ffffff;
+}
+[data-theme="light"] .call-btn .cap {
+  color: #ffffff;
+}
+
+/* Toast */
+[data-theme="light"] .toast {
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.2);
+}
+
+/* Tag button hover */
+[data-theme="light"] .tag button:hover {
+  color: #ffffff;
+}
+
+/* Mobile sheets */
+@media (max-width: 760px) {
+  [data-theme="light"] .pane-left,
+  [data-theme="light"] .pane-right {
+    box-shadow: 0 -12px 40px -16px rgba(0, 0, 0, 0.15);
+  }
+  [data-theme="light"] #sheet-scrim {
+    background: rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Roster speaking highlight */
+[data-theme="light"] .roster-item.speaking {
+  background: rgba(53, 224, 208, 0.08);
+}
+
+/* Maximize button on screen share stays dark in both themes */
+[data-theme="light"] .maximize-btn {
+  background: rgba(6, 10, 18, 0.72);
+  color: #fff;
+}
+
+/* ================================================= Advanced Features */
+
+/* AI Icebreaker UI */
+.icebreaker {
+  width: min(480px, 100%);
+  margin-top: -10px;
+  animation: msg-in 0.3s ease;
+}
+.icebreaker-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  box-shadow: 0 8px 30px var(--glow-cyan);
+}
+.icebreaker-icon {
+  flex: none;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--aave-cyan);
+  letter-spacing: 0.05em;
+  background: rgba(46, 186, 198, 0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.icebreaker-text {
+  flex: 1;
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: left;
+}
+.icebreaker-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--aave-grad);
+  color: #ffffff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 8px var(--glow-cyan);
+  transition: transform 0.15s ease;
+}
+.icebreaker-btn:hover {
+  transform: scale(1.1);
+}
+
+/* Soundboard Menu Grid */
+.soundboard-menu {
+  min-width: 240px !important;
+}
+.sound-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  padding: 4px;
+}
+.sound-opt {
+  display: block;
+  width: 100%;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-glass);
+  color: var(--text-dim) !important;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sound-opt:hover {
+  background: var(--aave-grad-subtle) !important;
+  color: #ffffff !important;
+  border-color: var(--border-bright);
+}
+
+/* Pitch Matcher UI */
+.pitch-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+}
+.pitch-labels {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.target-hz {
+  color: var(--aave-pink);
+  font-weight: 700;
+}
+.pitch-track {
+  position: relative;
+  width: 240px;
+  height: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.pitch-target-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 15%; /* 30Hz target width */
+  background: rgba(216, 101, 180, 0.25);
+  border-left: 1px solid rgba(216, 101, 180, 0.4);
+  border-right: 1px solid rgba(216, 101, 180, 0.4);
+}
+.pitch-needle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 6px;
+  background: var(--aave-cyan);
+  border-radius: 99px;
+  box-shadow: 0 0 8px var(--aave-cyan);
+  transition: left 0.15s cubic-bezier(0.1, 0.8, 0.2, 1);
+}
+.pitch-value-display {
+  font-size: 1.1rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.pitch-actions {
+  margin-top: 6px;
+}
+[data-theme="light"] .sound-opt {
+  color: var(--text) !important;
+}
+

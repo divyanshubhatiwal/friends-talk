@@ -17,9 +17,10 @@ import {
   isAvailable as voiceAvailable,
   provider as voiceProvider,
   verify as voiceVerify,
-  healthReason as voiceReason
+  healthReason as voiceReason,
+  generateIcebreaker
 } from './src/voice.js';
-import { RoomRegistry, newGame, applyMove } from './src/rooms.js';
+import { RoomRegistry, newGame, applyMove, newPitchMatchGame, submitPitchScore } from './src/rooms.js';
 import { GroupRegistry, MAX_MEMBERS } from './src/groups.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
@@ -128,6 +129,16 @@ app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] })
 
 app.get('/api/stats', (_req, res) => {
   res.json(stats());
+});
+
+app.get('/api/icebreaker', async (req, res) => {
+  const interests = String(req.query.interests || '').split(',').map((s) => s.trim()).filter(Boolean);
+  try {
+    const text = await generateIcebreaker(interests);
+    res.json({ ok: !!text, icebreakers: text });
+  } catch (error) {
+    res.json({ ok: false, error: error.message });
+  }
 });
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
@@ -740,19 +751,39 @@ io.on('connection', (socket) => {
     socket.emit('escalate:accepted', { initiator: false });
   });
 
-  socket.on('game:start', () => {
+  socket.on('soundboard:trigger', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('soundboard:trigger', { name: payload.name });
+    }
+  });
+
+  socket.on('game:start', (payload = {}) => {
     const room = rooms.forSocket(socket.id);
     const partnerId = rooms.partnerOf(socket.id);
     if (!room || !partnerId) return;
-    room.game = newGame(socket.id, partnerId);
+
+    if (payload.gameType === 'pitch-match') {
+      room.game = newPitchMatchGame(socket.id, partnerId);
+    } else {
+      room.game = newGame(socket.id, partnerId);
+      room.game.type = 'tic-tac-toe';
+    }
     emitGame(room);
   });
 
   socket.on('game:move', (payload = {}) => {
     const room = rooms.forSocket(socket.id);
     if (!room?.game) return;
-    const result = applyMove(room.game, socket.id, Number(payload.cell));
-    if (!result.ok) return;
+
+    let result;
+    if (room.game.type === 'pitch-match') {
+      result = submitPitchScore(room.game, socket.id, Number(payload.difference));
+    } else {
+      result = applyMove(room.game, socket.id, Number(payload.cell));
+    }
+
+    if (!result || !result.ok) return;
     emitGame(room);
   });
 
@@ -982,8 +1013,14 @@ function leaveRoom(socket, reason) {
 function emitGame(room) {
   for (const memberId of room.members) {
     io.to(memberId).emit('game:state', {
+      type: room.game.type || 'tic-tac-toe',
+      // Tic-tac-toe
       board: room.game.board,
-      yourMark: room.game.marks[memberId],
+      yourMark: room.game.marks ? room.game.marks[memberId] : null,
+      // Pitch-match
+      targetPitch: room.game.targetPitch,
+      scores: room.game.scores,
+      // Shared
       yourTurn: room.game.turn === memberId,
       winner: room.game.winner,
       finished: room.game.finished

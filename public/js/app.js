@@ -46,6 +46,11 @@
 
   let pc = null;
   let localStream = null;
+  let processedStream = null;
+  let processedStreamDestination = null;
+  let rawSource = null;
+  let currentFilter = 'none';
+  let effectsOutput = null;
   let audioCtx = null;
   let analyser = null;
   let timerId = null;
@@ -123,6 +128,7 @@
     captionThem: $('caption-them'), captionMe: $('caption-me'),
     roster: $('roster'), rosterHead: $('roster-head'), rosterList: $('roster-list'),
     modeHint: $('mode-hint'), screenSupportHint: $('screen-support-hint'),
+    installBtn: $('install-btn'),
     speakIncoming: $('speak-incoming'), speakTyped: $('speak-typed'),
     speechHint: $('speech-hint'),
     ringModal: $('ring-modal'), ringName: $('ring-name'), ringSub: $('ring-sub'),
@@ -134,7 +140,19 @@
     screenMaximize: $('screen-maximize'),
     screenModal: $('screen-modal'), screenAskTitle: $('screen-ask-title'),
     screenAskBody: $('screen-ask-body'), screenAskAccept: $('screen-ask-accept'),
-    screenAskDecline: $('screen-ask-decline')
+    screenAskDecline: $('screen-ask-decline'),
+    
+    // Modulator / Soundboard / Icebreaker
+    modifierBtn: $('btn-modifier'), modifierMenu: $('modifier-menu'),
+    soundboardBtn: $('btn-soundboard'), soundboardMenu: $('soundboard-menu'),
+    icebreakerWrap: $('icebreaker-wrap'), icebreakerText: $('icebreaker-text'), icebreakerNext: $('icebreaker-next'),
+    
+    // Pitch Match Game UI
+    gameSelectPane: $('game-select-pane'), gameSelectTTT: $('game-select-ttt'), gameSelectPM: $('game-select-pm'),
+    gameTTTPane: $('game-ttt-pane'), gamePMPane: $('game-pm-pane'),
+    pitchTargetHz: $('pitch-target-hz'), pitchTargetZone: $('pitch-target-zone'),
+    pitchNeedle: $('pitch-needle'), pitchCurrentVal: $('pitch-current-val'),
+    pitchLockBtn: $('pitch-lock-btn'), pitchPMStatus: $('game-pm-status')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -480,11 +498,318 @@
 
   function setupAudioGraph(stream) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(stream);
+    rawSource = audioCtx.createMediaStreamSource(stream);
+
+    processedStreamDestination = audioCtx.createMediaStreamDestination();
+    effectsOutput = audioCtx.createGain();
+
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
-    source.connect(analyser);
+
+    effectsOutput.connect(analyser);
+    effectsOutput.connect(processedStreamDestination);
+    processedStream = processedStreamDestination.stream;
+
+    applyVoiceFilter(currentFilter);
     estimateGender();
+  }
+
+  let activeModifierNodes = [];
+
+  function applyVoiceFilter(filterName) {
+    currentFilter = filterName || 'none';
+    if (!audioCtx || !rawSource || !effectsOutput) return;
+
+    activeModifierNodes.forEach((node) => {
+      try { node.disconnect(); } catch (e) {}
+      if (node.stop) { try { node.stop(); } catch (e) {} }
+    });
+    activeModifierNodes = [];
+    rawSource.disconnect();
+
+    if (currentFilter === 'robot') {
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1000;
+      filter.Q.value = 1;
+
+      const ringMod = audioCtx.createGain();
+      ringMod.gain.value = 0.5;
+
+      const lfo = audioCtx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 50;
+
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.5;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(ringMod.gain);
+
+      rawSource.connect(filter);
+      filter.connect(ringMod);
+      ringMod.connect(effectsOutput);
+
+      lfo.start();
+      activeModifierNodes.push(filter, ringMod, lfo, lfoGain);
+
+    } else if (currentFilter === 'deep') {
+      const lowpass = audioCtx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 380;
+
+      const peak = audioCtx.createBiquadFilter();
+      peak.type = 'peaking';
+      peak.frequency.value = 110;
+      peak.gain.value = 15;
+      peak.Q.value = 2;
+
+      rawSource.connect(peak);
+      peak.connect(lowpass);
+      lowpass.connect(effectsOutput);
+
+      activeModifierNodes.push(peak, lowpass);
+
+    } else if (currentFilter === 'chipmunk') {
+      const highpass = audioCtx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 1200;
+
+      const peak = audioCtx.createBiquadFilter();
+      peak.type = 'peaking';
+      peak.frequency.value = 2500;
+      peak.gain.value = 12;
+      peak.Q.value = 1.5;
+
+      rawSource.connect(highpass);
+      highpass.connect(peak);
+      peak.connect(effectsOutput);
+
+      activeModifierNodes.push(highpass, peak);
+
+    } else if (currentFilter === 'alien') {
+      const ringMod = audioCtx.createGain();
+      ringMod.gain.value = 0.5;
+
+      const lfo = audioCtx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 180;
+
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.5;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(ringMod.gain);
+
+      const delay = audioCtx.createDelay();
+      delay.delayTime.value = 0.15;
+
+      const feedback = audioCtx.createGain();
+      feedback.gain.value = 0.45;
+
+      rawSource.connect(ringMod);
+      ringMod.connect(delay);
+      delay.connect(feedback);
+      feedback.connect(delay);
+
+      ringMod.connect(effectsOutput);
+      delay.connect(effectsOutput);
+
+      lfo.start();
+      activeModifierNodes.push(ringMod, lfo, lfoGain, delay, feedback);
+
+    } else {
+      rawSource.connect(effectsOutput);
+    }
+  }
+
+  function triggerSynthesizedSound(name) {
+    if (!audioCtx || !effectsOutput) return;
+    
+    const destination = effectsOutput;
+    const now = audioCtx.currentTime;
+
+    if (name === 'airhorn') {
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc2.type = 'square';
+
+      osc1.frequency.setValueAtTime(280, now);
+      osc2.frequency.setValueAtTime(285, now);
+
+      osc1.frequency.exponentialRampToValueAtTime(140, now + 1.2);
+      osc2.frequency.exponentialRampToValueAtTime(142, now + 1.2);
+
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(0.35, now + 0.05);
+      gainNode.gain.setValueAtTime(0.35, now + 0.8);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+      gainNode.connect(destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 1.2);
+      osc2.stop(now + 1.2);
+
+    } else if (name === 'drumroll') {
+      const bufferSize = audioCtx.sampleRate * 1.5;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(180, now);
+
+      const vca = audioCtx.createGain();
+      vca.gain.setValueAtTime(0, now);
+      
+      const duration = 1.5;
+      const steps = 30;
+      for (let i = 0; i < steps; i++) {
+        const time = now + (i / steps) * duration;
+        const vol = 0.15 + Math.random() * 0.15;
+        vca.gain.setValueAtTime(vol, time);
+        vca.gain.setValueAtTime(0.01, time + 0.03);
+      }
+
+      const crashOsc = audioCtx.createOscillator();
+      const crashGain = audioCtx.createGain();
+      crashOsc.type = 'sawtooth';
+      crashOsc.frequency.setValueAtTime(12000, now + duration);
+      crashGain.gain.setValueAtTime(0, now + duration);
+      crashGain.gain.linearRampToValueAtTime(0.4, now + duration + 0.02);
+      crashGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.8);
+
+      noise.connect(filter);
+      filter.connect(vca);
+      vca.connect(destination);
+
+      crashOsc.connect(crashGain);
+      crashGain.connect(destination);
+
+      noise.start(now);
+      noise.stop(now + duration);
+      crashOsc.start(now + duration);
+      crashOsc.stop(now + duration + 0.8);
+
+    } else if (name === 'applause') {
+      const duration = 2.0;
+      const bufferSize = audioCtx.sampleRate * duration;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1500, now);
+      filter.Q.setValueAtTime(1.0, now);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.1);
+
+      for (let i = 0; i < 40; i++) {
+        const t = now + Math.random() * (duration - 0.5);
+        gain.gain.setValueAtTime(0.25, t);
+        gain.gain.exponentialRampToValueAtTime(0.02, t + 0.06);
+      }
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(destination);
+
+      noise.start(now);
+      noise.stop(now + duration);
+
+    } else if (name === 'rimshot') {
+      const stick = audioCtx.createOscillator();
+      const stickGain = audioCtx.createGain();
+      stick.type = 'sine';
+      stick.frequency.setValueAtTime(450, now);
+      stick.frequency.exponentialRampToValueAtTime(150, now + 0.05);
+
+      stickGain.gain.setValueAtTime(0.4, now);
+      stickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+      const bufferSize = audioCtx.sampleRate * 0.12;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = 'highpass';
+      noiseFilter.frequency.setValueAtTime(1000, now);
+
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.setValueAtTime(0.35, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+      stick.connect(stickGain);
+      stickGain.connect(destination);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(destination);
+
+      stick.start(now);
+      stick.stop(now + 0.05);
+      noise.start(now);
+      noise.stop(now + 0.12);
+
+    } else if (name === 'scratch') {
+      const duration = 0.5;
+      const bufferSize = audioCtx.sampleRate * duration;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 3.0;
+
+      filter.frequency.setValueAtTime(2000, now);
+      filter.frequency.linearRampToValueAtTime(300, now + 0.15);
+      filter.frequency.linearRampToValueAtTime(2500, now + 0.35);
+      filter.frequency.exponentialRampToValueAtTime(1000, now + 0.5);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.25, now + 0.05);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.2);
+      gain.gain.linearRampToValueAtTime(0.28, now + 0.35);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(destination);
+
+      noise.start(now);
+      noise.stop(now + duration);
+    }
   }
 
   // Voice-pitch gender estimate. Runs entirely in this browser on the local
@@ -560,6 +885,62 @@
       if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
     }
     return sampleRate / bestLag;
+  }
+
+  // ------------------------------------------------------- installability
+
+  /**
+   * Registers the service worker and handles the install prompt.
+   *
+   * Registration is deferred until after load so it never competes with the
+   * work of actually getting a call connected, which is what someone opening
+   * this page came for.
+   */
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    // A service worker needs a secure context; localhost counts as one.
+    if (!window.isSecureContext) return;
+
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((error) => {
+        console.warn('[friends-talk] service worker registration failed:', error.message);
+      });
+    });
+  }
+
+  /**
+   * Chrome and friends fire beforeinstallprompt and expect the page to hold on
+   * to it and present its own button. iOS fires nothing at all — there, adding
+   * to the home screen is a manual Share-sheet action, so the hint says so
+   * rather than showing a button that cannot work.
+   */
+  let installPrompt = null;
+
+  function setupInstall() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      installPrompt = event;
+      el.installBtn.hidden = false;
+    });
+
+    el.installBtn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      installPrompt = null;
+      el.installBtn.hidden = true;
+      if (outcome === 'accepted') toast('Installed — look for the icon on your home screen', 'ok');
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      el.installBtn.hidden = true;
+    });
+
+    // Already running as an installed app: nothing to offer.
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    if (standalone) el.installBtn.hidden = true;
   }
 
   // --------------------------------------------------------- frame driver
@@ -650,6 +1031,86 @@
     for (const bar of el.viz.querySelectorAll('i')) bar.style.transform = 'scaleY(0.08)';
   }
 
+  // ------------------------------------------------------------- icebreaker & pitch match
+
+  let activeIcebreakers = [];
+  let currentIcebreakerIndex = 0;
+  let currentPitchHz = 0;
+  let pitchTrackInterval = null;
+
+  const DEFAULT_ICEBREAKERS = [
+    "If you could have dinner with any historical figure, who would it be?",
+    "What is the most interesting book or movie you've read/watched recently?",
+    "Would you rather travel 100 years into the past or 100 years into the future?",
+    "What's your absolute favorite way to spend a weekend?",
+    "If you could immediately speak any language fluently, which would you pick?",
+    "What is the most spontaneous thing you've ever done?",
+    "What topic could you give a 20-minute presentation on with zero preparation?",
+    "Do you prefer listening to music, podcasts, or audiobooks while walking?",
+    "What's the best piece of advice you've ever received?",
+    "What's a hobby you've always wanted to try but haven't yet?"
+  ];
+
+  async function loadIcebreakers(interests) {
+    el.icebreakerWrap.hidden = false;
+    el.icebreakerText.textContent = "Asking AI for matching topics...";
+    currentIcebreakerIndex = 0;
+    activeIcebreakers = [];
+
+    try {
+      const query = interests && interests.length ? `?interests=${encodeURIComponent(interests.join(','))}` : '';
+      const res = await fetch(`/api/icebreaker${query}`);
+      const data = await res.json();
+      if (data.ok && data.icebreakers) {
+        activeIcebreakers = data.icebreakers
+          .split('\n')
+          .map((line) => line.replace(/^\d+\.\s*/, '').trim())
+          .filter(Boolean);
+      }
+    } catch (e) {
+      console.warn("Icebreaker API failed, falling back to local pool", e.message);
+    }
+
+    if (!activeIcebreakers || activeIcebreakers.length === 0) {
+      activeIcebreakers = [...DEFAULT_ICEBREAKERS]
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+    }
+    showCurrentIcebreaker();
+  }
+
+  function showCurrentIcebreaker() {
+    if (!activeIcebreakers.length) return;
+    el.icebreakerText.textContent = activeIcebreakers[currentIcebreakerIndex];
+  }
+
+  function startPitchMatchTracking() {
+    if (pitchTrackInterval) clearInterval(pitchTrackInterval);
+    const buf = new Float32Array(analyser ? analyser.fftSize : 2048);
+
+    pitchTrackInterval = setInterval(() => {
+      if (!analyser || state.phase !== 'live') return;
+      
+      analyser.getFloatTimeDomainData(buf);
+      const f0 = detectPitch(buf, audioCtx.sampleRate);
+      
+      if (f0 > 80 && f0 < 350) {
+        currentPitchHz = f0;
+        el.pitchCurrentVal.textContent = Math.round(f0) + " Hz";
+        
+        const pct = Math.max(0, Math.min(100, ((f0 - 90) / (310 - 90)) * 100));
+        el.pitchNeedle.style.left = pct + "%";
+      }
+    }, 100);
+  }
+
+  function stopPitchMatchTracking() {
+    if (pitchTrackInterval) {
+      clearInterval(pitchTrackInterval);
+      pitchTrackInterval = null;
+    }
+  }
+
   // ------------------------------------------------------------- captions
 
   // Each clip is recorded as a self-contained file rather than a slice of a
@@ -728,7 +1189,8 @@
     pc = new RTCPeerConnection({ iceServers: state.iceServers, iceCandidatePoolSize: 4 });
 
     if (localStream) {
-      for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+      const streamToSend = processedStream || localStream;
+      for (const track of streamToSend.getTracks()) pc.addTrack(track, streamToSend);
     }
 
     pc.onicecandidate = (event) => {
@@ -1333,7 +1795,8 @@
     groupPeers.set(id, entry);
 
     if (localStream) {
-      for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+      const streamToSend = processedStream || localStream;
+      for (const track of streamToSend.getTracks()) pc.addTrack(track, streamToSend);
     }
 
     pc.onicecandidate = (event) => {
@@ -1638,6 +2101,8 @@
     stopGroup();
     stopViz();
     stopCaptions();
+    stopPitchMatchTracking();
+    el.icebreakerWrap.hidden = true;
     resetPad();
     stopTimer();
     el.queueNote.hidden = true;
@@ -1698,7 +2163,7 @@
     // Hidden outright where the browser cannot capture a screen, rather than
     // offered and then failing when pressed.
     el.screenBtn.hidden = inGroup || state.mode === 'text' || !screenSupported();
-    if (!live) closeMoreMenu();
+    if (!live) closeMenus();
 
     el.chatInput.disabled = !live;
     el.send.disabled = !live;
@@ -1759,13 +2224,13 @@
   });
 
   el.block.addEventListener('click', () => {
-    closeMoreMenu();
+    closeMenus();
     socket.emit('block');
     toast('Blocked — you will not be matched again', 'ok');
   });
 
   el.report.addEventListener('click', () => {
-    closeMoreMenu();
+    closeMenus();
     el.reportModal.showModal();
   });
   el.reportCancel.addEventListener('click', () => el.reportModal.close());
@@ -1854,30 +2319,95 @@
 
   // -------------------------------------------------------------------- game
 
+  let targetPitch = 150;
+
   function renderBoard(payload) {
     el.gameWrap.hidden = false;
-    el.board.innerHTML = '';
-    payload.board.forEach((cell, index) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = cell || '';
-      btn.disabled = Boolean(cell) || !payload.yourTurn || payload.finished;
-      btn.addEventListener('click', () => socket.emit('game:move', { cell: index }));
-      el.board.appendChild(btn);
-    });
+    el.gameSelectPane.hidden = true;
 
-    if (payload.finished) {
-      el.gameStatus.textContent = payload.winner
-        ? (payload.winner === payload.yourMark ? 'You won.' : 'They won.')
-        : 'A draw.';
+    if (payload.type === 'pitch-match') {
+      el.gameTTTPane.hidden = true;
+      el.gamePMPane.hidden = false;
+
+      targetPitch = payload.targetPitch;
+      el.pitchTargetHz.textContent = `Target: ${targetPitch} Hz`;
+      
+      // Calculate target zone percentage between 90Hz and 310Hz
+      const pct = ((targetPitch - 90) / (310 - 90)) * 100;
+      el.pitchTargetZone.style.left = Math.max(0, Math.min(85, pct - 7.5)) + "%";
+
+      if (payload.finished) {
+        stopPitchMatchTracking();
+        el.pitchLockBtn.hidden = true;
+        if (payload.winner === 'draw') {
+          el.pitchPMStatus.textContent = "It's a draw! Both matched pitch.";
+        } else {
+          el.pitchPMStatus.textContent = payload.winner === socket.id
+            ? "You won! Closer pitch match."
+            : "They won! Closer pitch match.";
+        }
+      } else {
+        if (payload.yourTurn) {
+          el.pitchPMStatus.textContent = "Your turn! Hum to match the target.";
+          el.pitchLockBtn.hidden = false;
+          startPitchMatchTracking();
+        } else {
+          el.pitchPMStatus.textContent = "Their turn... waiting for match.";
+          el.pitchLockBtn.hidden = true;
+          stopPitchMatchTracking();
+        }
+      }
     } else {
-      el.gameStatus.textContent = payload.yourTurn
-        ? `Your turn — you are ${payload.yourMark}`
-        : 'Waiting for them…';
+      el.gameTTTPane.hidden = false;
+      el.gamePMPane.hidden = true;
+
+      el.board.innerHTML = '';
+      payload.board.forEach((cell, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = cell || '';
+        btn.disabled = Boolean(cell) || !payload.yourTurn || payload.finished;
+        btn.addEventListener('click', () => socket.emit('game:move', { cell: index }));
+        el.board.appendChild(btn);
+      });
+
+      if (payload.finished) {
+        el.gameStatus.textContent = payload.winner
+          ? (payload.winner === payload.yourMark ? 'You won.' : 'They won.')
+          : 'A draw.';
+      } else {
+        el.gameStatus.textContent = payload.yourTurn
+          ? `Your turn — you are ${payload.yourMark}`
+          : 'Waiting for them…';
+      }
     }
   }
 
-  el.game.addEventListener('click', () => socket.emit('game:start'));
+  el.game.addEventListener('click', () => {
+    if (el.gameWrap.hidden) {
+      el.gameWrap.hidden = false;
+      el.gameSelectPane.hidden = false;
+      el.gameTTTPane.hidden = true;
+      el.gamePMPane.hidden = true;
+    } else {
+      el.gameWrap.hidden = true;
+    }
+  });
+
+  el.gameSelectTTT.addEventListener('click', () => {
+    socket.emit('game:start', { gameType: 'tic-tac-toe' });
+    el.gameSelectPane.hidden = true;
+  });
+
+  el.gameSelectPM.addEventListener('click', () => {
+    socket.emit('game:start', { gameType: 'pitch-match' });
+    el.gameSelectPane.hidden = true;
+  });
+
+  el.pitchLockBtn.addEventListener('click', () => {
+    socket.emit('game:move', { difference: Math.abs(currentPitchHz - targetPitch) });
+    el.pitchLockBtn.hidden = true;
+  });
 
   // ---------------------------------------------------------- socket events
 
@@ -1972,6 +2502,7 @@
       runViz();
       if (state.captions) startCaptions();
       if (payload.initiator) await startOffer();
+      loadIcebreakers(payload.sharedInterests);
     } else {
       setStatus(`Text chat with <strong>${escapeHtml(payload.partner.name)}</strong>`);
     }
@@ -2019,12 +2550,14 @@
 
   socket.on('caption', (payload = {}) => {
     const target = payload.from === 'me' ? el.captionMe : el.captionThem;
-    target.textContent = payload.from === 'me' ? `You: ${payload.text}` : payload.text;
+    el.captionBar.hidden = false;
+    
     if (payload.original) {
-      const note = document.createElement('span');
-      note.className = 'lang-note';
-      note.textContent = `(${payload.original})`;
-      target.appendChild(note);
+      target.innerHTML = payload.from === 'me'
+        ? `You: <strong>${escapeHtml(payload.text)}</strong><br><small style="opacity: 0.65; font-style: italic;">Original: ${escapeHtml(payload.original)}</small>`
+        : `<strong>${escapeHtml(payload.text)}</strong><br><small style="opacity: 0.65; font-style: italic;">Original: ${escapeHtml(payload.original)}</small>`;
+    } else {
+      target.textContent = payload.from === 'me' ? `You: ${payload.text}` : payload.text;
     }
 
     // Reading the other person's words aloud is what turns captions into
@@ -2043,6 +2576,11 @@
   });
 
   socket.on('game:state', renderBoard);
+
+  socket.on('soundboard:trigger', ({ name }) => {
+    triggerSynthesizedSound(name);
+    toast(`🎵 Played sound: ${name}`);
+  });
 
   socket.on('friend:request', ({ name }) => {
     if (confirm(`${name} wants to add you as a friend. Accept?`)) socket.emit('friend:accept');
@@ -2174,24 +2712,63 @@
 
   // Report and block live behind an overflow menu. They should be reachable in
   // one tap but not sit next to Mute inviting a misclick.
-  function closeMoreMenu() {
+  function closeMenus() {
     el.moreMenu.hidden = true;
     el.moreBtn.setAttribute('aria-expanded', 'false');
+    el.modifierMenu.hidden = true;
+    el.soundboardMenu.hidden = true;
   }
 
   el.moreBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     const open = el.moreMenu.hidden;
+    closeMenus();
     el.moreMenu.hidden = !open;
     el.moreBtn.setAttribute('aria-expanded', String(open));
   });
 
+  el.modifierBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = el.modifierMenu.hidden;
+    closeMenus();
+    el.modifierMenu.hidden = !open;
+  });
+
+  el.soundboardBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = el.soundboardMenu.hidden;
+    closeMenus();
+    el.soundboardMenu.hidden = !open;
+  });
+
+  for (const opt of document.querySelectorAll('.mod-opt')) {
+    opt.addEventListener('click', () => {
+      const filter = opt.dataset.filter;
+      for (const o of document.querySelectorAll('.mod-opt')) {
+        o.classList.toggle('is-active', o === opt);
+      }
+      applyVoiceFilter(filter);
+      closeMenus();
+      toast(`Voice filter: ${opt.textContent}`, 'ok');
+    });
+  }
+
+  for (const opt of document.querySelectorAll('.sound-opt')) {
+    opt.addEventListener('click', () => {
+      const sound = opt.dataset.sound;
+      triggerSynthesizedSound(sound);
+      socket.emit('soundboard:trigger', { name: sound });
+      closeMenus();
+      toast(`Played sound: ${opt.textContent}`);
+    });
+  }
+
   document.addEventListener('click', (event) => {
-    if (!event.target.closest('.overflow')) closeMoreMenu();
+    if (!event.target.closest('.overflow')) closeMenus();
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeMoreMenu();
+    if (event.key === 'Escape') closeMenus();
   });
 
   // ------------------------------------------------------------------- boot
@@ -2211,9 +2788,12 @@
     if (!screenSupported()) {
       el.screenSupportHint.hidden = false;
       el.screenSupportHint.textContent = isMobileBrowser()
-        ? 'Phones and tablets cannot share a screen — no mobile browser allows it. You can still watch a screen someone else shares.'
-        : 'This browser cannot share a screen. You can still watch one that is shared with you.';
+        ? 'Screen sharing is not available on phones or tablets — no mobile browser supports it. You can still watch a screen someone else shares with you.'
+        : 'This browser does not support screen sharing. You can still watch a screen shared with you.';
     }
+
+    registerServiceWorker();
+    setupInstall();
 
     speech.load();
     state.speakIncoming = store.read('speakIncoming', false);
@@ -2241,8 +2821,30 @@
     renderHistory();
     renderFriends(store.read('friendList', []));
     paintPhase();
+
+    el.icebreakerNext.addEventListener('click', () => {
+      if (activeIcebreakers.length > 0) {
+        currentIcebreakerIndex = (currentIcebreakerIndex + 1) % activeIcebreakers.length;
+        showCurrentIcebreaker();
+      }
+    });
+
     bootAgeGate();
   }
 
+  // ---------------------------------------------------------- theme toggle
+
+  function initThemeToggle() {
+    const btn = $('theme-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('ft:theme', next);
+    });
+  }
+
+  initThemeToggle();
   boot();
 })();

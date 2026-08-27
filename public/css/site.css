@@ -64,6 +64,80 @@
   --maxw: 1200px;
 }
 
+/* ----------------------------------------------------------- Light Theme */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f4f5f7;
+  --bg-main: #f4f5f7;
+  --bg-deep: #ebedf1;
+  --bg-raised: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.88);
+  --bg-card-hover: rgba(240, 243, 248, 0.95);
+  --bg-glass: rgba(0, 0, 0, 0.03);
+
+  /* Accents stay vibrant — they work on light backgrounds too */
+  --accent-glow: rgba(46, 186, 198, 0.22);
+
+  /* Text */
+  --text: #1a1d26;
+  --text-main: #1a1d26;
+  --text-dim: #4a5268;
+  --text-faint: #7c849a;
+  --text-secondary: #5a637a;
+  --text-muted: #8d95aa;
+  --text-cyan: #1a9eaa;
+
+  /* Borders & Glows — softer on light */
+  --border: rgba(0, 0, 0, 0.10);
+  --border-bright: rgba(46, 186, 198, 0.30);
+  --border-glass: rgba(0, 0, 0, 0.08);
+  --border-active: rgba(46, 186, 198, 0.45);
+  --glow-cyan: rgba(46, 186, 198, 0.18);
+  --glow-magenta: rgba(182, 80, 158, 0.18);
+}
+
+/* Smooth theme transition */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ------------------------------------------------------ Theme Toggle Button */
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-glass);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.3s ease;
+  flex: none;
+}
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.theme-toggle:hover {
+  color: var(--aave-cyan);
+  border-color: var(--border-bright);
+  background: rgba(46, 186, 198, 0.08);
+}
+.theme-toggle:active svg {
+  transform: rotate(180deg) scale(0.85);
+}
+/* Hide whichever icon does not apply */
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: block; }
+[data-theme="light"] .theme-toggle .icon-sun { display: block; }
+[data-theme="light"] .theme-toggle .icon-moon { display: none; }
+
 * {
   box-sizing: border-box;
 }
@@ -85,6 +159,14 @@ body {
     radial-gradient(700px 480px at 85% 15%, rgba(182, 80, 158, 0.14), transparent 65%),
     radial-gradient(900px 600px at 50% 60%, rgba(139, 92, 246, 0.08), transparent 75%);
   background-attachment: fixed;
+}
+
+/* Light-mode ambient glows — gentler and warmer */
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(800px 500px at 15% 10%, rgba(46, 186, 198, 0.07), transparent 70%),
+    radial-gradient(700px 480px at 85% 15%, rgba(182, 80, 158, 0.06), transparent 65%),
+    radial-gradient(900px 600px at 50% 60%, rgba(139, 92, 246, 0.04), transparent 75%);
 }
 
 a {
@@ -772,5 +854,39 @@ table.compare .no {
   .cta { padding: 48px 20px; }
 }
 
+/* --------------------------------------------------- Light Theme Overrides */
 
+[data-theme="light"] .site-header {
+  background: rgba(244, 245, 247, 0.8);
+}
 
+[data-theme="light"] .hero h1 { color: var(--text-main); }
+
+[data-theme="light"] .btn-gradient { color: #ffffff; }
+
+[data-theme="light"] .cta {
+  background: radial-gradient(circle at 50% 0%, rgba(46, 186, 198, 0.1) 0%, rgba(182, 80, 158, 0.08) 50%, var(--bg-card) 100%);
+}
+[data-theme="light"] .cta h2 { color: var(--text-main); }
+
+[data-theme="light"] .stat-card .num {
+  background: var(--aave-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-theme="light"] .site-footer {
+  background: var(--bg-deep);
+}
+
+[data-theme="light"] .prose h1 {
+  background: var(--aave-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-theme="light"] table.compare th {
+  background: rgba(0, 0, 0, 0.02);
+}

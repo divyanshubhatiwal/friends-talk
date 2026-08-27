@@ -118,6 +118,20 @@ export async function translate(text, targetLanguage) {
   return null;
 }
 
+/** Generates custom icebreaker questions for matching interests. */
+export async function generateIcebreaker(interests = []) {
+  const list = Array.isArray(interests) && interests.length > 0 ? interests : ['general conversation', 'meeting new friends'];
+  const prompt =
+    `Generate three engaging, creative, or slightly deep icebreaker questions to start a friendly voice chat between two strangers who matched on these interests: ${list.join(', ')}. ` +
+    'The questions should be quick, fun, open-ended, and avoid generic clichés. ' +
+    'Reply with only the three numbered questions, one per line (e.g. "1. Question...\\n2. Question...\\n3. Question..."). Do not add any introduction, header, quotes, or notes.';
+
+  if (provider() === 'gemini') return geminiText(prompt);
+  if (provider() === 'openai') return openaiTranslate(prompt, "Icebreaker request");
+  return null;
+}
+
+
 // ------------------------------------------------------------------- Gemini
 
 async function geminiTranscribe(buffer, mimeType, language) {

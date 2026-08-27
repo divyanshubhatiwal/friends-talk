@@ -5,8 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <title>Friends Talk — Voice Chat</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#070b14">
+<!-- iOS ignores the manifest for these, so they have to be stated separately. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Friends Talk">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/app.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎧</text></svg>">
+<script>
+(function(){var t=localStorage.getItem('ft:theme');if(!t)t=matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';document.documentElement.setAttribute('data-theme',t)})()
+</script>
 </head>
 <body class="app-body">
 
@@ -29,6 +39,21 @@
     <b id="call-count">0</b> talking
   </div>
 
+  <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark theme">
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="12" cy="12" r="5"/>
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    </svg>
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+
+  <button class="bar-btn install-btn" id="install-btn" hidden aria-label="Install Friends Talk">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>
+    </svg>
+  </button>
   <button class="bar-btn" id="toggle-left" aria-label="Show settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
       <path d="M4 6h16M4 12h16M4 18h10"/>
@@ -195,6 +220,19 @@
         <p class="caption-line me" id="caption-me"></p>
       </div>
 
+      <!-- AI Icebreaker Card -->
+      <div class="icebreaker" id="icebreaker-wrap" hidden>
+        <div class="icebreaker-card">
+          <div class="icebreaker-icon">🤖 AI Catalyst</div>
+          <p class="icebreaker-text" id="icebreaker-text">Loading icebreaker topic...</p>
+          <button class="icebreaker-btn" id="icebreaker-next" title="Next Prompt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
       <button class="call-btn" id="call-btn" aria-label="Call a stranger">
         <svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0M12 18v3"/>
@@ -230,11 +268,46 @@
             <path d="M14 2v6h6M8 13h8M8 17h5"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-game" title="Play tic-tac-toe" aria-label="Play tic-tac-toe">
+        <button class="ctrl" id="btn-game" title="Play a game" aria-label="Play a game">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
           </svg>
         </button>
+
+        <!-- Voice Modulator -->
+        <div class="overflow">
+          <button class="ctrl" id="btn-modifier" title="Voice Modulator" aria-label="Voice Modulator">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M12 2v20M17 5v14M22 9v6M7 9v6M2 5v14"/>
+            </svg>
+          </button>
+          <div class="menu" id="modifier-menu" hidden>
+            <button class="mod-opt is-active" data-filter="none">Normal Voice</button>
+            <button class="mod-opt" data-filter="robot">Robot Filter</button>
+            <button class="mod-opt" data-filter="deep">Deep Voice</button>
+            <button class="mod-opt" data-filter="chipmunk">Chipmunk Voice</button>
+            <button class="mod-opt" data-filter="alien">Alien Modulator</button>
+          </div>
+        </div>
+
+        <!-- Soundboard -->
+        <div class="overflow">
+          <button class="ctrl" id="btn-soundboard" title="Soundboard" aria-label="Soundboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          </button>
+          <div class="menu soundboard-menu" id="soundboard-menu" hidden>
+            <div class="sound-grid">
+              <button class="sound-opt" data-sound="airhorn">🎺 Airhorn</button>
+              <button class="sound-opt" data-sound="drumroll">🥁 Drumroll</button>
+              <button class="sound-opt" data-sound="applause">👏 Applause</button>
+              <button class="sound-opt" data-sound="rimshot">🔔 Rimshot</button>
+              <button class="sound-opt" data-sound="scratch">📀 Scratch</button>
+            </div>
+          </div>
+        </div>
+
         <button class="ctrl" id="btn-friend" title="Add friend" aria-label="Add friend">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6"/>
@@ -289,8 +362,49 @@
       </div>
 
       <div class="game" id="game-wrap" hidden>
-        <p class="game-status" id="game-status"></p>
-        <div class="board" id="board"></div>
+        <!-- Game Selector (Visible when no active game) -->
+        <div class="game-select-pane" id="game-select-pane">
+          <p class="game-status">Select a game to play together:</p>
+          <div class="game-options-row" style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+            <button class="btn btn-soft btn-sm" id="game-select-ttt">Tic-Tac-Toe</button>
+            <button class="btn btn-gradient btn-sm" id="game-select-pm">Pitch Matcher</button>
+          </div>
+        </div>
+
+        <!-- Tic-Tac-Toe Game -->
+        <div class="game-ttt-pane" id="game-ttt-pane" hidden>
+          <p class="game-status" id="game-status"></p>
+          <div class="board" id="board"></div>
+        </div>
+
+        <!-- Pitch-Match Game -->
+        <div class="game-pm-pane" id="game-pm-pane" hidden>
+          <p class="game-status" id="game-pm-status">Hum to match the target!</p>
+          <div class="pitch-container">
+            <div class="pitch-labels">
+              <span class="pitch-label low">Low</span>
+              <span class="pitch-label target-hz" id="pitch-target-hz">Target: -- Hz</span>
+              <span class="pitch-label high">High</span>
+            </div>
+            
+            <div class="pitch-track">
+              <!-- Target zone -->
+              <div class="pitch-target-zone" id="pitch-target-zone"></div>
+              <!-- Current player needle -->
+              <div class="pitch-needle" id="pitch-needle"></div>
+            </div>
+
+            <!-- Local display of current Hz estimate -->
+            <div class="pitch-value-display">
+              <span id="pitch-current-val">-- Hz</span>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="pitch-actions">
+              <button class="btn btn-gradient btn-sm" id="pitch-lock-btn">Lock In Pitch</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </main>

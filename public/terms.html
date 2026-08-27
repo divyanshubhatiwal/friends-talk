@@ -6,6 +6,9 @@
 <title>Terms of Service — Friends Talk</title>
 <link rel="stylesheet" href="/css/site.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛸</text></svg>">
+<script>
+(function(){var t=localStorage.getItem('ft:theme');if(!t)t=matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';document.documentElement.setAttribute('data-theme',t)})()
+</script>
 </head>
 <body>
 
@@ -15,7 +18,14 @@
       <span class="brand-ghost">👻</span>
       Friends Talk
     </a>
-    <nav class="nav"><a href="/privacy">Privacy</a><a class="btn btn-gradient btn-sm" href="/app">Launch App</a></nav>
+    <nav class="nav">
+      <a href="/privacy">Privacy</a>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark theme" onclick="(function(d){var c=d.getAttribute('data-theme')==='light'?'dark':'light';d.setAttribute('data-theme',c);localStorage.setItem('ft:theme',c)})(document.documentElement)">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <a class="btn btn-gradient btn-sm" href="/app">Launch App</a>
+    </nav>
   </div>
 </header>
 
