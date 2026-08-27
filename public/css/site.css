@@ -13,6 +13,10 @@
   --bg-deep: #030407;
   --bg-raised: #0b0f19;
   --bg-card: rgba(14, 19, 32, 0.75);
+  /* Opaque equivalent of --bg-card composited over --bg-deep. Used on the
+     large scrolling panes, where a backdrop blur costs a great deal and shows
+     almost nothing, because what it blurs is already near-black. */
+  --bg-pane: #0b1019;
   --bg-card-hover: rgba(20, 27, 45, 0.88);
   --bg-glass: rgba(255, 255, 255, 0.035);
   --bg-glass-heavy: rgba(11, 15, 25, 0.85);
@@ -83,6 +87,7 @@
   --bg-deep: #edf2f7;
   --bg-raised: #ffffff;
   --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-pane: #fbfcfd;
   --bg-card-hover: rgba(255, 255, 255, 0.95);
   --bg-glass: rgba(0, 0, 0, 0.025);
   --bg-glass-heavy: rgba(255, 255, 255, 0.92);
@@ -280,7 +285,7 @@ a {
   -webkit-backdrop-filter: var(--glass-blur);
   background: var(--bg-glass-heavy);
   border-bottom: 1px solid var(--border);
-  transition: all 0.25s ease;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
 
 .site-header .wrap {
@@ -365,7 +370,7 @@ a {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
   backdrop-filter: blur(10px);
 }
 
@@ -625,7 +630,7 @@ a {
   padding: 6px 12px;
   border-radius: var(--radius-pill);
   color: var(--text-dim);
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
 .market-card:hover .token-pill {
@@ -663,7 +668,7 @@ a {
   border-radius: var(--radius-md);
   padding: 32px 24px;
   position: relative;
-  transition: all 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
 }
 
 .step:hover {
@@ -756,7 +761,7 @@ table.compare td.no {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 20px 24px;
-  transition: all 0.25s ease;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
 
 .faq details[open] {

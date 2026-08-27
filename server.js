@@ -20,7 +20,16 @@ import {
   healthReason as voiceReason,
   generateIcebreaker
 } from './src/voice.js';
-import { RoomRegistry, newGame, applyMove, newPitchMatchGame, submitPitchScore } from './src/rooms.js';
+import {
+  RoomRegistry,
+  newGame,
+  applyMove,
+  newPitchMatchGame,
+  submitPitchScore,
+  newTriviaGame,
+  submitTriviaAnswer,
+  newDrawingGame
+} from './src/rooms.js';
 import { GroupRegistry, MAX_MEMBERS } from './src/groups.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
@@ -806,6 +815,10 @@ io.on('connection', (socket) => {
 
     if (payload.gameType === 'pitch-match') {
       room.game = newPitchMatchGame(socket.id, partnerId);
+    } else if (payload.gameType === 'trivia') {
+      room.game = newTriviaGame(socket.id, partnerId);
+    } else if (payload.gameType === 'drawing') {
+      room.game = newDrawingGame(socket.id, partnerId);
     } else {
       room.game = newGame(socket.id, partnerId);
       room.game.type = 'tic-tac-toe';
@@ -820,12 +833,90 @@ io.on('connection', (socket) => {
     let result;
     if (room.game.type === 'pitch-match') {
       result = submitPitchScore(room.game, socket.id, Number(payload.difference));
+    } else if (room.game.type === 'trivia') {
+      result = submitTriviaAnswer(room.game, socket.id, Number(payload.answerIndex));
     } else {
       result = applyMove(room.game, socket.id, Number(payload.cell));
     }
 
     if (!result || !result.ok) return;
     emitGame(room);
+  });
+
+  // Collaborative Drawing Board
+  socket.on('draw:path', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('draw:path', payload);
+    }
+  });
+
+  socket.on('draw:clear', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('draw:clear');
+    }
+  });
+
+  // YouTube Watch Party Sync
+  socket.on('watch:load', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('watch:load', { videoId: payload.videoId, title: payload.title });
+    }
+  });
+
+  socket.on('watch:state', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('watch:state', { state: payload.state, time: payload.time });
+    }
+  });
+
+  // Ambiance Soundscape Sync
+  socket.on('soundscape:sync', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('soundscape:sync', { sound: payload.sound, on: payload.on });
+    }
+  });
+
+  // Themed Voice Lounges
+  socket.on('lounges:list', () => {
+    socket.emit('lounges:list', groups.getLoungeList());
+  });
+
+  socket.on('lounges:join', (payload = {}) => {
+    if (!peer.ageConfirmed) {
+      socket.emit('error:blocked', { reason: 'age_not_confirmed' });
+      return;
+    }
+    matchmaker.dequeue(socket.id);
+    leaveRoom(socket, 'switched');
+    leaveGroup(socket, 'switched');
+
+    const loungeId = String(payload.loungeId || '');
+    const room = groups.joinLounge(loungeId, peer);
+    if (!room) return;
+
+    const roster = groups.roster(room);
+    socket.emit('group:joined', {
+      roomId: room.id,
+      you: peer.id,
+      title: room.title,
+      isLounge: true,
+      members: roster.filter((m) => m.id !== peer.id),
+      capacity: 10
+    });
+
+    for (const member of room.members.keys()) {
+      if (member === socket.id) continue;
+      io.to(member).emit('group:peer-joined', {
+        peer: { id: peer.id, name: peer.name, country: peer.country },
+        size: room.members.size
+      });
+    }
+    broadcastStats();
   });
 
   socket.on('friend:request', () => {
@@ -1094,6 +1185,7 @@ function leaveRoom(socket, reason) {
 
 function emitGame(room) {
   for (const memberId of room.members) {
+    const isDrawer = room.game.drawer === memberId;
     io.to(memberId).emit('game:state', {
       type: room.game.type || 'tic-tac-toe',
       // Tic-tac-toe
@@ -1102,6 +1194,13 @@ function emitGame(room) {
       // Pitch-match
       targetPitch: room.game.targetPitch,
       scores: room.game.scores,
+      // Trivia
+      questions: room.game.questions,
+      currentIndex: room.game.currentIndex,
+      answers: room.game.answers,
+      // Drawing
+      isDrawer,
+      word: isDrawer ? room.game.word : null,
       // Shared
       yourTurn: room.game.turn === memberId,
       winner: room.game.winner,

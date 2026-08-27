@@ -150,10 +150,28 @@
     
     // Pitch Match Game UI
     gameSelectPane: $('game-select-pane'), gameSelectTTT: $('game-select-ttt'), gameSelectPM: $('game-select-pm'),
+    gameSelectTrivia: $('game-select-trivia'), gameSelectDraw: $('game-select-draw'),
     gameTTTPane: $('game-ttt-pane'), gamePMPane: $('game-pm-pane'),
+    gameTriviaPane: $('game-trivia-pane'), gameDrawPane: $('game-draw-pane'),
     pitchTargetHz: $('pitch-target-hz'), pitchTargetZone: $('pitch-target-zone'),
     pitchNeedle: $('pitch-needle'), pitchCurrentVal: $('pitch-current-val'),
-    pitchLockBtn: $('pitch-lock-btn'), pitchPMStatus: $('game-pm-status')
+    pitchLockBtn: $('pitch-lock-btn'), pitchPMStatus: $('game-pm-status'),
+
+    // Trivia Battle UI
+    triviaQNum: $('trivia-q-num'), triviaScoreMe: $('trivia-score-me'), triviaScoreThem: $('trivia-score-them'),
+    triviaQuestion: $('trivia-question'), triviaOptions: $('trivia-options'), triviaStatus: $('trivia-status'),
+
+    // Drawing Board UI
+    drawWordBadge: $('draw-word-badge'), drawTools: $('draw-tools'), drawClearBtn: $('draw-clear-btn'),
+    drawCanvas: $('draw-canvas'), drawStatus: $('draw-status'),
+
+    // Watch Party & Soundscape UI
+    watchBtn: $('btn-watch'), watchWrap: $('watch-wrap'), watchClose: $('watch-close'),
+    watchUrlInput: $('watch-url-input'), watchLoadBtn: $('watch-load-btn'), watchPlayer: $('watch-player'),
+    soundscapeBtn: $('btn-soundscape'), soundscapeMenu: $('soundscape-menu'), soundscapeVolume: $('soundscape-volume'),
+
+    // Lounges UI
+    loungesList: $('lounges-list')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -960,6 +978,41 @@
       window.navigator.standalone === true;
     if (standalone) el.installBtn.hidden = true;
   }
+
+  // ------------------------------------------------------------- shortcuts
+
+  /**
+   * Keyboard shortcuts for the controls used most during a call.
+   *
+   * Deliberately ignored while typing: a chat box that swallows the letter M
+   * because it means "mute" is worse than having no shortcuts at all. Space is
+   * also let through for anything the browser already treats as a button.
+   */
+  function isTyping(target) {
+    if (!target) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+  }
+
+  const SHORTCUTS = {
+    ' ': () => el.callBtn.click(),          // call / hang up
+    n: () => { if (!el.next.hidden && state.phase !== 'idle') el.next.click(); },
+    m: () => { if (!el.mute.hidden && state.phase !== 'idle') el.mute.click(); },
+    t: () => { if (state.phase !== 'idle') { el.chatInput.focus(); } },
+    p: () => { if (state.phase !== 'idle') el.padBtn.click(); }
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTyping(event.target)) return;
+    // A dialog is modal; its own buttons and Escape should win.
+    if (document.querySelector('dialog[open]')) return;
+
+    const action = SHORTCUTS[event.key.toLowerCase()];
+    if (!action) return;
+    event.preventDefault();
+    action();
+  });
 
   // ---------------------------------------------------- push notifications
 
@@ -2389,35 +2442,373 @@
     socket.emit('image', { dataUrl });
   });
 
+  // -------------------------------------------------------- ambiance soundscapes
+
+  let ambianceAudioNodes = [];
+  let ambianceGainNode = null;
+  let currentAmbiance = 'none';
+
+  function playAmbiance(type) {
+    currentAmbiance = type;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Clean up active soundscape nodes
+    ambianceAudioNodes.forEach((node) => {
+      try { node.disconnect(); } catch (e) {}
+      if (node.stop) { try { node.stop(); } catch (e) {} }
+    });
+    ambianceAudioNodes = [];
+
+    if (type === 'none') {
+      toast('Ambiance off');
+      return;
+    }
+
+    const now = audioCtx.currentTime;
+    if (!ambianceGainNode) {
+      ambianceGainNode = audioCtx.createGain();
+      ambianceGainNode.gain.value = parseFloat(el.soundscapeVolume.value || 0.4);
+      ambianceGainNode.connect(audioCtx.destination);
+    }
+
+    if (type === 'rain') {
+      // Pink noise + resonant rain filter
+      const bufferSize = audioCtx.sampleRate * 2;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        data[i] = (b0 + b1 + b2) * 0.12;
+      }
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+      noise.loop = true;
+
+      const lowpass = audioCtx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 850;
+
+      noise.connect(lowpass);
+      lowpass.connect(ambianceGainNode);
+      noise.start(now);
+      ambianceAudioNodes.push(noise, lowpass);
+
+    } else if (type === 'cafe') {
+      // Warm low drone + soft murmur
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      osc1.type = 'triangle';
+      osc2.type = 'sine';
+      osc1.frequency.value = 130;
+      osc2.frequency.value = 195;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 400;
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(ambianceGainNode);
+      osc1.start(now);
+      osc2.start(now);
+      ambianceAudioNodes.push(osc1, osc2, filter);
+
+    } else if (type === 'fire') {
+      // Crackle generator
+      const bufferSize = audioCtx.sampleRate * 2;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() > 0.985 ? (Math.random() * 2 - 1) * 0.8 : (Math.random() * 2 - 1) * 0.03;
+      }
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+      noise.loop = true;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1200;
+      filter.Q.value = 2.0;
+
+      noise.connect(filter);
+      filter.connect(ambianceGainNode);
+      noise.start(now);
+      ambianceAudioNodes.push(noise, filter);
+
+    } else if (type === 'city') {
+      // Low synth drone
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = 65;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 220;
+
+      osc.connect(filter);
+      filter.connect(ambianceGainNode);
+      osc.start(now);
+      ambianceAudioNodes.push(osc, filter);
+
+    } else if (type === 'space') {
+      // Binaural cosmic drone
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.value = 55;
+      osc2.frequency.value = 58;
+
+      osc1.connect(ambianceGainNode);
+      osc2.connect(ambianceGainNode);
+      osc1.start(now);
+      osc2.start(now);
+      ambianceAudioNodes.push(osc1, osc2);
+    }
+  }
+
+  el.soundscapeBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = el.soundscapeMenu.hidden;
+    closeMenus();
+    el.soundscapeMenu.hidden = !open;
+  });
+
+  for (const opt of document.querySelectorAll('.soundscape-opt')) {
+    opt.addEventListener('click', () => {
+      const sound = opt.dataset.ambiance;
+      for (const o of document.querySelectorAll('.soundscape-opt')) {
+        o.classList.toggle('is-active', o === opt);
+      }
+      playAmbiance(sound);
+      socket.emit('soundscape:sync', { sound, on: sound !== 'none' });
+      closeMenus();
+      toast(`Atmosphere: ${opt.textContent}`, 'ok');
+    });
+  }
+
+  el.soundscapeVolume.addEventListener('input', () => {
+    if (ambianceGainNode) {
+      ambianceGainNode.gain.value = parseFloat(el.soundscapeVolume.value);
+    }
+  });
+
+  socket.on('soundscape:sync', ({ sound, on }) => {
+    if (on && sound) {
+      playAmbiance(sound);
+      for (const o of document.querySelectorAll('.soundscape-opt')) {
+        o.classList.toggle('is-active', o.dataset.ambiance === sound);
+      }
+      toast(`Partner shared atmosphere: ${sound}`, 'ok');
+    } else {
+      playAmbiance('none');
+      for (const o of document.querySelectorAll('.soundscape-opt')) {
+        o.classList.toggle('is-active', o.dataset.ambiance === 'none');
+      }
+    }
+  });
+
+  // ------------------------------------------------------------- YouTube Watch Party
+
+  let ytPlayer = null;
+  let isSyncingWatch = false;
+
+  function loadYouTubeScript() {
+    if (window.YT && window.YT.Player) return Promise.resolve();
+    return new Promise((resolve) => {
+      window.onYouTubeIframeAPIReady = () => resolve();
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    });
+  }
+
+  function parseYouTubeId(input) {
+    if (!input) return null;
+    const str = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
+    const match = str.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    return match ? match[1] : null;
+  }
+
+  async function loadWatchVideo(videoId, remote = false) {
+    if (!videoId) return;
+    el.watchWrap.hidden = false;
+    await loadYouTubeScript();
+
+    if (!ytPlayer) {
+      ytPlayer = new YT.Player('watch-player', {
+        videoId,
+        playerVars: { autoplay: 1, rel: 0, modestbranding: 1 },
+        events: {
+          onStateChange: (event) => {
+            if (isSyncingWatch) return;
+            const time = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+            socket.emit('watch:state', { state: event.data, time });
+          }
+        }
+      });
+    } else {
+      ytPlayer.loadVideoById(videoId);
+    }
+
+    if (!remote) {
+      socket.emit('watch:load', { videoId });
+      toast('Loaded video for Watch Party', 'ok');
+    }
+  }
+
+  el.watchBtn.addEventListener('click', () => {
+    el.watchWrap.hidden = !el.watchWrap.hidden;
+  });
+
+  el.watchClose.addEventListener('click', () => {
+    el.watchWrap.hidden = true;
+    if (ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
+  });
+
+  el.watchLoadBtn.addEventListener('click', () => {
+    const id = parseYouTubeId(el.watchUrlInput.value);
+    if (id) {
+      loadWatchVideo(id, false);
+      el.watchUrlInput.value = '';
+    } else {
+      toast('Please enter a valid YouTube link or ID', 'err');
+    }
+  });
+
+  socket.on('watch:load', ({ videoId }) => {
+    loadWatchVideo(videoId, true);
+    toast('Partner started a YouTube Watch Party!', 'ok');
+  });
+
+  socket.on('watch:state', ({ state, time }) => {
+    if (!ytPlayer) return;
+    isSyncingWatch = true;
+    if (typeof time === 'number' && Math.abs((ytPlayer.getCurrentTime?.() || 0) - time) > 1.5) {
+      ytPlayer.seekTo?.(time, true);
+    }
+    if (state === YT.PlayerState.PLAYING) ytPlayer.playVideo?.();
+    if (state === YT.PlayerState.PAUSED) ytPlayer.pauseVideo?.();
+    setTimeout(() => { isSyncingWatch = false; }, 500);
+  });
+
   // -------------------------------------------------------------------- game
 
   let targetPitch = 150;
+  let currentColor = '#00f2fe';
+  let isDrawing = false;
+  let drawCtx = null;
+  let lastX = 0, lastY = 0;
+
+  function initCanvas() {
+    const canvas = el.drawCanvas;
+    if (!canvas) return;
+    drawCtx = canvas.getContext('2d');
+    drawCtx.lineCap = 'round';
+    drawCtx.lineJoin = 'round';
+
+    function getCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    }
+
+    function startDraw(e) {
+      isDrawing = true;
+      const { x, y } = getCoords(e);
+      lastX = x;
+      lastY = y;
+    }
+
+    function moveDraw(e) {
+      if (!isDrawing || !drawCtx) return;
+      e.preventDefault();
+      const { x, y } = getCoords(e);
+      drawCtx.strokeStyle = currentColor;
+      drawCtx.lineWidth = 4;
+      drawCtx.beginPath();
+      drawCtx.moveTo(lastX, lastY);
+      drawCtx.lineTo(x, y);
+      drawCtx.stroke();
+
+      socket.emit('draw:path', { fromX: lastX, fromY: lastY, toX: x, toY: y, color: currentColor });
+      lastX = x;
+      lastY = y;
+    }
+
+    function endDraw() {
+      isDrawing = false;
+    }
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', moveDraw);
+    canvas.addEventListener('mouseup', endDraw);
+    canvas.addEventListener('mouseleave', endDraw);
+
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw);
+  }
+
+  function clearCanvas() {
+    if (!drawCtx || !el.drawCanvas) return;
+    drawCtx.clearRect(0, 0, el.drawCanvas.width, el.drawCanvas.height);
+  }
+
+  el.drawClearBtn.addEventListener('click', () => {
+    clearCanvas();
+    socket.emit('draw:clear');
+  });
+
+  for (const dot of document.querySelectorAll('.color-dot')) {
+    dot.addEventListener('click', () => {
+      for (const d of document.querySelectorAll('.color-dot')) d.classList.remove('is-active');
+      dot.classList.add('is-active');
+      currentColor = dot.dataset.color || '#00f2fe';
+    });
+  }
+
+  socket.on('draw:path', ({ fromX, fromY, toX, toY, color }) => {
+    if (!drawCtx) initCanvas();
+    drawCtx.strokeStyle = color || '#00f2fe';
+    drawCtx.lineWidth = 4;
+    drawCtx.beginPath();
+    drawCtx.moveTo(fromX, fromY);
+    drawCtx.lineTo(toX, toY);
+    drawCtx.stroke();
+  });
+
+  socket.on('draw:clear', clearCanvas);
 
   function renderBoard(payload) {
     el.gameWrap.hidden = false;
     el.gameSelectPane.hidden = true;
+    el.gameTTTPane.hidden = true;
+    el.gamePMPane.hidden = true;
+    el.gameTriviaPane.hidden = true;
+    el.gameDrawPane.hidden = true;
 
     if (payload.type === 'pitch-match') {
-      el.gameTTTPane.hidden = true;
       el.gamePMPane.hidden = false;
-
       targetPitch = payload.targetPitch;
       el.pitchTargetHz.textContent = `Target: ${targetPitch} Hz`;
-      
-      // Calculate target zone percentage between 90Hz and 310Hz
       const pct = ((targetPitch - 90) / (310 - 90)) * 100;
       el.pitchTargetZone.style.left = Math.max(0, Math.min(85, pct - 7.5)) + "%";
 
       if (payload.finished) {
         stopPitchMatchTracking();
         el.pitchLockBtn.hidden = true;
-        if (payload.winner === 'draw') {
-          el.pitchPMStatus.textContent = "It's a draw! Both matched pitch.";
-        } else {
-          el.pitchPMStatus.textContent = payload.winner === socket.id
-            ? "You won! Closer pitch match."
-            : "They won! Closer pitch match.";
-        }
+        el.pitchPMStatus.textContent = payload.winner === 'draw'
+          ? "It's a draw! Both matched pitch."
+          : (payload.winner === socket.id ? "You won! Closer pitch match." : "They won! Closer pitch match.");
       } else {
         if (payload.yourTurn) {
           el.pitchPMStatus.textContent = "Your turn! Hum to match the target.";
@@ -2429,10 +2820,61 @@
           stopPitchMatchTracking();
         }
       }
+    } else if (payload.type === 'trivia') {
+      el.gameTriviaPane.hidden = false;
+      const qIndex = payload.currentIndex || 0;
+      const currentQ = payload.questions?.[qIndex];
+
+      el.triviaQNum.textContent = `Question ${qIndex + 1} / ${payload.questions?.length || 5}`;
+      const partnerId = Object.keys(payload.scores || {}).find((id) => id !== socket.id);
+      el.triviaScoreMe.textContent = payload.scores?.[socket.id] || 0;
+      el.triviaScoreThem.textContent = payload.scores?.[partnerId] || 0;
+
+      if (payload.finished) {
+        el.triviaQuestion.textContent = "Trivia Battle Finished!";
+        el.triviaOptions.innerHTML = '';
+        el.triviaStatus.textContent = payload.winner === 'draw'
+          ? "It's a tie!"
+          : (payload.winner === socket.id ? "🎉 You Won the Trivia Battle!" : "They Won the Trivia Battle!");
+      } else if (currentQ) {
+        el.triviaQuestion.textContent = currentQ.q;
+        el.triviaOptions.innerHTML = '';
+        const myAnswer = payload.answers?.[socket.id];
+
+        currentQ.options.forEach((optText, index) => {
+          const btn = document.createElement('button');
+          btn.className = 'trivia-opt';
+          btn.textContent = optText;
+          if (myAnswer !== null && myAnswer !== undefined) {
+            btn.disabled = true;
+            if (myAnswer === index) btn.classList.add('selected');
+          }
+          btn.addEventListener('click', () => {
+            socket.emit('game:move', { answerIndex: index });
+          });
+          el.triviaOptions.appendChild(btn);
+        });
+
+        el.triviaStatus.textContent = myAnswer !== null && myAnswer !== undefined
+          ? "Waiting for partner to answer…"
+          : "Choose your answer!";
+      }
+
+    } else if (payload.type === 'drawing') {
+      el.gameDrawPane.hidden = false;
+      if (!drawCtx) initCanvas();
+      if (payload.isDrawer) {
+        el.drawWordBadge.textContent = `Draw this: ${payload.word}`;
+        el.drawTools.hidden = false;
+        el.drawStatus.textContent = "Draw the word for your partner to guess in chat!";
+      } else {
+        el.drawWordBadge.textContent = "Guess the drawing in chat!";
+        el.drawTools.hidden = true;
+        el.drawStatus.textContent = "Type your guesses in the chat pane on the right!";
+      }
+
     } else {
       el.gameTTTPane.hidden = false;
-      el.gamePMPane.hidden = true;
-
       el.board.innerHTML = '';
       payload.board.forEach((cell, index) => {
         const btn = document.createElement('button');
@@ -2461,6 +2903,8 @@
       el.gameSelectPane.hidden = false;
       el.gameTTTPane.hidden = true;
       el.gamePMPane.hidden = true;
+      el.gameTriviaPane.hidden = true;
+      el.gameDrawPane.hidden = true;
     } else {
       el.gameWrap.hidden = true;
     }
@@ -2476,10 +2920,65 @@
     el.gameSelectPane.hidden = true;
   });
 
+  el.gameSelectTrivia.addEventListener('click', () => {
+    socket.emit('game:start', { gameType: 'trivia' });
+    el.gameSelectPane.hidden = true;
+  });
+
+  el.gameSelectDraw.addEventListener('click', () => {
+    socket.emit('game:start', { gameType: 'drawing' });
+    el.gameSelectPane.hidden = true;
+  });
+
   el.pitchLockBtn.addEventListener('click', () => {
     socket.emit('game:move', { difference: Math.abs(currentPitchHz - targetPitch) });
     el.pitchLockBtn.hidden = true;
   });
+
+  // --------------------------------------------------------- Themed Lounges
+
+  function renderLounges(lounges) {
+    if (!el.loungesList) return;
+    el.loungesList.innerHTML = '';
+
+    lounges.forEach((lounge) => {
+      const card = document.createElement('div');
+      card.className = 'lounge-card';
+
+      card.innerHTML = `
+        <div class="lounge-card-top">
+          <div class="lounge-icon">${lounge.icon}</div>
+          <div class="lounge-info">
+            <div class="lounge-title">${escapeHtml(lounge.name)}</div>
+            <div class="lounge-desc">${escapeHtml(lounge.desc)}</div>
+          </div>
+        </div>
+        <div class="lounge-card-bottom">
+          <span class="lounge-meta">🟢 ${lounge.membersCount} / ${lounge.capacity} online</span>
+          <button class="btn btn-gradient btn-sm lounge-join-btn">Join Lounge</button>
+        </div>
+      `;
+
+      card.querySelector('.lounge-join-btn').addEventListener('click', async () => {
+        try {
+          await ensureMic();
+          if (audioCtx?.state === 'suspended') await audioCtx.resume();
+        } catch {
+          toast('Microphone access is required to join a lounge', 'err');
+          return;
+        }
+
+        state.phase = 'searching';
+        paintPhase();
+        setStatus(`Joining <strong>${escapeHtml(lounge.name)}</strong>…`);
+        socket.emit('lounges:join', { loungeId: lounge.id });
+      });
+
+      el.loungesList.appendChild(card);
+    });
+  }
+
+  socket.on('lounges:list', (list) => renderLounges(list));
 
   // ---------------------------------------------------------- socket events
 
@@ -2776,8 +3275,7 @@
     if (window.innerWidth > 760) closeSheets();
   });
 
-  // Sidebar tabs — filters, recent calls, and friends share one column instead
-  // of stacking into a page-length scroll.
+  // Sidebar tabs — filters, lounges, recent calls, and friends share one column
   for (const tab of document.querySelectorAll('.tab')) {
     tab.addEventListener('click', () => {
       for (const other of document.querySelectorAll('.tab')) {
@@ -2785,6 +3283,9 @@
       }
       for (const panel of document.querySelectorAll('.panel')) {
         panel.classList.toggle('is-active', panel.id === tab.dataset.panel);
+      }
+      if (tab.dataset.panel === 'panel-lounges') {
+        socket.emit('lounges:list');
       }
     });
   }
@@ -2900,6 +3401,7 @@
     renderHistory();
     renderFriends(store.read('friendList', []));
     paintPhase();
+    socket.emit('lounges:list');
 
     el.icebreakerNext.addEventListener('click', () => {
       if (activeIcebreakers.length > 0) {

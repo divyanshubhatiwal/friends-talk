@@ -72,6 +72,7 @@
   <aside class="pane pane-left" id="pane-left">
     <div class="tabs" role="tablist">
       <button class="tab is-active" data-panel="panel-filters" role="tab">Filters</button>
+      <button class="tab" data-panel="panel-lounges" role="tab">Lounges</button>
       <button class="tab" data-panel="panel-recent" role="tab">Recent</button>
       <button class="tab" data-panel="panel-friends" role="tab">Friends</button>
     </div>
@@ -183,6 +184,14 @@
       </details>
     </div>
 
+    <div class="panel" id="panel-lounges">
+      <div class="lounge-header">
+        <span class="group-label">Public Topic Rooms</span>
+        <p class="hint">Drop into open conversations with people who share your vibe.</p>
+      </div>
+      <div class="lounges-grid" id="lounges-list"></div>
+    </div>
+
     <div class="panel" id="panel-recent">
       <div class="list" id="history-list"></div>
     </div>
@@ -273,6 +282,35 @@
             <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
           </svg>
         </button>
+        <button class="ctrl" id="btn-watch" title="Watch Party (YouTube)" aria-label="Watch Party" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="2" y="4" width="20" height="15" rx="3"/><polygon points="10 9 15 12 10 15 10 9" fill="currentColor"/>
+          </svg>
+        </button>
+
+        <!-- Ambiance Soundscape -->
+        <div class="overflow">
+          <button class="ctrl" id="btn-soundscape" title="Ambiance Soundscape" aria-label="Ambiance Soundscape">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9M16 14v6M8 14v6M12 16v6"/>
+            </svg>
+          </button>
+          <div class="menu soundscape-menu" id="soundscape-menu" hidden>
+            <span class="group-label" style="margin-bottom: 6px;">Ambiance Atmospheres</span>
+            <div class="soundscape-grid">
+              <button class="soundscape-opt is-active" data-ambiance="none">🔇 Off</button>
+              <button class="soundscape-opt" data-ambiance="rain">🌧️ Cyber Rain</button>
+              <button class="soundscape-opt" data-ambiance="cafe">☕ Late Café</button>
+              <button class="soundscape-opt" data-ambiance="fire">🔥 Campfire</button>
+              <button class="soundscape-opt" data-ambiance="city">🌆 Neon City</button>
+              <button class="soundscape-opt" data-ambiance="space">🛸 Space Drone</button>
+            </div>
+            <div class="soundscape-vol-wrap">
+              <label for="soundscape-volume" class="group-label">Atmosphere Volume</label>
+              <input type="range" id="soundscape-volume" min="0" max="1" step="0.05" value="0.4">
+            </div>
+          </div>
+        </div>
 
         <!-- Voice Modulator -->
         <div class="overflow">
@@ -327,6 +365,24 @@
         </div>
       </div>
 
+      <!-- YouTube Watch Party Wrapper -->
+      <div class="watch-party" id="watch-wrap" hidden>
+        <div class="watch-head">
+          <div class="watch-title-group">
+            <span class="live-dot"></span>
+            <span>YouTube Watch Party</span>
+          </div>
+          <button class="watch-close-btn" id="watch-close" aria-label="Close Watch Party">×</button>
+        </div>
+        <div class="watch-input-bar">
+          <input type="text" id="watch-url-input" placeholder="Paste YouTube link or video ID…" autocomplete="off">
+          <button class="btn btn-gradient btn-sm" id="watch-load-btn">Load & Sync</button>
+        </div>
+        <div class="watch-player-stage">
+          <div id="watch-player"></div>
+        </div>
+      </div>
+
       <div class="screen" id="screen-wrap" hidden>
         <div class="screen-head">
           <span class="live-dot"></span>
@@ -365,8 +421,10 @@
         <!-- Game Selector (Visible when no active game) -->
         <div class="game-select-pane" id="game-select-pane">
           <p class="game-status">Select a game to play together:</p>
-          <div class="game-options-row" style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+          <div class="game-options-row" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 10px;">
             <button class="btn btn-soft btn-sm" id="game-select-ttt">Tic-Tac-Toe</button>
+            <button class="btn btn-soft btn-sm" id="game-select-trivia">🧠 Trivia Battle</button>
+            <button class="btn btn-soft btn-sm" id="game-select-draw">🎨 Drawing Game</button>
             <button class="btn btn-gradient btn-sm" id="game-select-pm">Pitch Matcher</button>
           </div>
         </div>
@@ -375,6 +433,40 @@
         <div class="game-ttt-pane" id="game-ttt-pane" hidden>
           <p class="game-status" id="game-status"></p>
           <div class="board" id="board"></div>
+        </div>
+
+        <!-- Trivia Battle Game -->
+        <div class="game-trivia-pane" id="game-trivia-pane" hidden>
+          <div class="trivia-header">
+            <span class="trivia-badge" id="trivia-q-num">Question 1 / 5</span>
+            <div class="trivia-scores">
+              <span>You: <b id="trivia-score-me">0</b></span>
+              <span>Them: <b id="trivia-score-them">0</b></span>
+            </div>
+          </div>
+          <p class="trivia-question" id="trivia-question">Loading question…</p>
+          <div class="trivia-options-grid" id="trivia-options"></div>
+          <p class="game-status" id="trivia-status"></p>
+        </div>
+
+        <!-- Collaborative Drawing Board Game -->
+        <div class="game-draw-pane" id="game-draw-pane" hidden>
+          <div class="draw-header">
+            <span class="draw-word-badge" id="draw-word-badge">Word: ???</span>
+            <div class="draw-tools" id="draw-tools">
+              <div class="draw-colors">
+                <button class="color-dot is-active" data-color="#00f2fe" style="background:#00f2fe;"></button>
+                <button class="color-dot" data-color="#ec4899" style="background:#ec4899;"></button>
+                <button class="color-dot" data-color="#10b981" style="background:#10b981;"></button>
+                <button class="color-dot" data-color="#ffffff" style="background:#ffffff;"></button>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="draw-clear-btn">Clear</button>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="draw-canvas" width="480" height="280"></canvas>
+          </div>
+          <p class="game-status" id="draw-status">Guess the drawing in chat!</p>
         </div>
 
         <!-- Pitch-Match Game -->

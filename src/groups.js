@@ -122,4 +122,47 @@ export class GroupRegistry {
     }
     return { rooms: occupied, people };
   }
+
+  // Curated Themed Voice Lounges
+  static THEMED_LOUNGES = [
+    { id: 'lounge-cafe', name: 'The Late Night Café', desc: 'Chill vibes, coffee murmurs, and casual life chats', icon: '☕', tags: ['chill', 'coffee', 'casual'] },
+    { id: 'lounge-devs', name: 'Devs & Terminal', desc: 'Code, tech talk, open source, and startups', icon: '💻', tags: ['coding', 'tech', 'ai'] },
+    { id: 'lounge-gaming', name: 'Gaming & Anime Hub', desc: 'Co-op games, seasonal anime, and recommendations', icon: '🎮', tags: ['gaming', 'anime', 'manga'] },
+    { id: 'lounge-language', name: 'Global Language Exchange', desc: 'Practice languages with native speakers worldwide', icon: '🌍', tags: ['english', 'spanish', 'japanese'] },
+    { id: 'lounge-midnight', name: 'Midnight Confessions', desc: 'Deep thoughts, late night philosophy, and safe venting', icon: '🌙', tags: ['deep', 'night', 'philosophy'] }
+  ];
+
+  getLoungeList() {
+    return GroupRegistry.THEMED_LOUNGES.map((lounge) => {
+      const room = this.rooms.get(lounge.id);
+      return {
+        ...lounge,
+        membersCount: room ? room.members.size : 0,
+        capacity: 10
+      };
+    });
+  }
+
+  joinLounge(loungeId, peer) {
+    const valid = GroupRegistry.THEMED_LOUNGES.find((l) => l.id === loungeId);
+    if (!valid) return null;
+
+    let room = this.rooms.get(loungeId);
+    if (!room) {
+      room = {
+        id: loungeId,
+        isLounge: true,
+        title: valid.name,
+        members: new Map(),
+        topics: valid.tags,
+        createdAt: Date.now()
+      };
+      this.rooms.set(loungeId, room);
+    }
+
+    room.members.set(peer.id, peer);
+    this.bySocket.set(peer.id, room.id);
+    return room;
+  }
 }
+

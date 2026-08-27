@@ -117,22 +117,139 @@ export function submitPitchScore(game, playerId, difference) {
 
   const partnerId = Object.keys(game.scores).find((id) => id !== playerId);
   if (game.scores[partnerId] !== null) {
-    // Both players have submitted their scores!
     const diffA = game.scores[playerId];
     const diffB = game.scores[partnerId];
 
     if (Math.abs(diffA - diffB) < 0.1) {
       game.winner = 'draw';
     } else {
-      // The one with the smaller absolute pitch difference wins!
       game.winner = diffA < diffB ? playerId : partnerId;
     }
     game.finished = true;
   } else {
-    // Pass turn to the other player
     game.turn = partnerId;
   }
 
   return { ok: true, game };
 }
+
+// Trivia Question Bank for in-call trivia battle
+const TRIVIA_BANK = [
+  {
+    q: "What is the fastest land animal in the world?",
+    options: ["Cheetah", "Pronghorn", "Lion", "Peregrine Falcon"],
+    answer: 0
+  },
+  {
+    q: "Which planet in our solar system has the most moons?",
+    options: ["Saturn", "Jupiter", "Neptune", "Uranus"],
+    answer: 0
+  },
+  {
+    q: "In what year was the World Wide Web created?",
+    options: ["1989", "1995", "1983", "1991"],
+    answer: 0
+  },
+  {
+    q: "Which element has the chemical symbol 'Au'?",
+    options: ["Silver", "Gold", "Argon", "Aluminum"],
+    answer: 1
+  },
+  {
+    q: "What is the national animal of Scotland?",
+    options: ["Red Deer", "Unicorn", "Golden Eagle", "Highland Cow"],
+    answer: 1
+  },
+  {
+    q: "Who directed the movie 'Interstellar'?",
+    options: ["Denis Villeneuve", "Christopher Nolan", "James Cameron", "Ridley Scott"],
+    answer: 1
+  },
+  {
+    q: "What is the capital city of Australia?",
+    options: ["Sydney", "Melbourne", "Canberra", "Brisbane"],
+    answer: 2
+  },
+  {
+    q: "How many bits are in one byte?",
+    options: ["4", "16", "8", "32"],
+    answer: 2
+  },
+  {
+    q: "Which video game franchise features the character 'Master Chief'?",
+    options: ["Gears of War", "Destiny", "Halo", "Doom"],
+    answer: 2
+  },
+  {
+    q: "What is the hardest natural substance on Earth?",
+    options: ["Quartz", "Graphene", "Diamond", "Titanium"],
+    answer: 2
+  }
+];
+
+export function newTriviaGame(firstPlayerId, secondPlayerId) {
+  // Pick 5 unique random questions
+  const shuffled = [...TRIVIA_BANK].sort(() => Math.random() - 0.5);
+  const questions = shuffled.slice(0, 5);
+
+  return {
+    type: 'trivia',
+    questions,
+    currentIndex: 0,
+    scores: { [firstPlayerId]: 0, [secondPlayerId]: 0 },
+    answers: { [firstPlayerId]: null, [secondPlayerId]: null },
+    winner: null,
+    finished: false
+  };
+}
+
+export function submitTriviaAnswer(game, playerId, answerIndex) {
+  if (!game || game.finished || game.type !== 'trivia') return { ok: false };
+  if (game.answers[playerId] !== null) return { ok: false }; // already answered this round
+
+  const currentQ = game.questions[game.currentIndex];
+  if (!currentQ) return { ok: false };
+
+  game.answers[playerId] = answerIndex;
+  if (answerIndex === currentQ.answer) {
+    game.scores[playerId] = (game.scores[playerId] || 0) + 100;
+  }
+
+  const partnerId = Object.keys(game.scores).find((id) => id !== playerId);
+  if (game.answers[partnerId] !== null) {
+    // Both players answered current question! Move to next or finish
+    if (game.currentIndex + 1 < game.questions.length) {
+      game.currentIndex += 1;
+      game.answers[playerId] = null;
+      game.answers[partnerId] = null;
+    } else {
+      // Game completed!
+      const scoreA = game.scores[playerId];
+      const scoreB = game.scores[partnerId];
+      if (scoreA === scoreB) {
+        game.winner = 'draw';
+      } else {
+        game.winner = scoreA > scoreB ? playerId : partnerId;
+      }
+      game.finished = true;
+    }
+  }
+
+  return { ok: true, game };
+}
+
+export function newDrawingGame(firstPlayerId, secondPlayerId) {
+  const WORDS = ["Sunset", "Robot", "Guitar", "Pizza", "Castle", "Rocket", "Dolphin", "Volcano", "Bicycle", "Dragon"];
+  const randomWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+
+  return {
+    type: 'drawing',
+    drawer: firstPlayerId,
+    guesser: secondPlayerId,
+    word: randomWord,
+    strokes: [],
+    finished: false
+  };
+}
+
 
