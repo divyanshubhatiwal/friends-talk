@@ -17,7 +17,8 @@ const memory = {
   friendMessages: [],
   calls: [],
   reports: [],
-  bans: new Map()
+  bans: new Map(),
+  pushSubscriptions: new Map()  // endpoint -> {clientId, subscription}
 };
 
 export async function init() {
@@ -223,6 +224,59 @@ export async function reportCountFor(clientId, sinceMs = 24 * 60 * 60 * 1000) {
     return db.collection('reports').countDocuments({ clientId, at: { $gte: since } });
   }
   return memory.reports.filter((r) => r.clientId === clientId && r.at >= since).length;
+}
+
+// ------------------------------------------------------ push subscriptions
+
+/**
+ * Browser push subscriptions, one or more per client.
+ *
+ * Keyed by endpoint because that is what the push service itself treats as the
+ * identity of a subscription, and what it hands back when one expires. A person
+ * on both a phone and a laptop legitimately has two.
+ */
+export async function savePushSubscription(clientId, subscription) {
+  if (!clientId || !subscription?.endpoint) return;
+
+  if (db) {
+    await db.collection('pushSubscriptions').updateOne(
+      { endpoint: subscription.endpoint },
+      { $set: { clientId, subscription, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    return;
+  }
+  memory.pushSubscriptions.set(subscription.endpoint, { clientId, subscription });
+}
+
+export async function listPushSubscriptions(clientId) {
+  if (!clientId) return [];
+
+  if (db) {
+    const rows = await db.collection('pushSubscriptions')
+      .find({ clientId }, { projection: { subscription: 1 } })
+      .toArray();
+    return rows.map((row) => row.subscription);
+  }
+  return [...memory.pushSubscriptions.values()]
+    .filter((row) => row.clientId === clientId)
+    .map((row) => row.subscription);
+}
+
+/**
+ * Drops a subscription the push service has rejected.
+ *
+ * Push endpoints die silently — the browser is uninstalled, permission is
+ * revoked, the endpoint rotates — and the only signal is a 404 or 410 when you
+ * try to use one. Not deleting them means retrying dead endpoints forever.
+ */
+export async function deletePushSubscription(endpoint) {
+  if (!endpoint) return;
+  if (db) {
+    await db.collection('pushSubscriptions').deleteOne({ endpoint });
+    return;
+  }
+  memory.pushSubscriptions.delete(endpoint);
 }
 
 // ----------------------------------------------------------------------- bans

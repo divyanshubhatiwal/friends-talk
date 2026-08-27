@@ -25,6 +25,7 @@ import { GroupRegistry, MAX_MEMBERS } from './src/groups.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
 import * as store from './src/storage/repository.js';
+import * as push from './src/push.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -200,7 +201,9 @@ io.on('connection', (socket) => {
     // speech provider configured, rather than offering a toggle that does
     // nothing when switched on.
     voiceFeatures: voiceAvailable(),
-    languages: LANGUAGES
+    languages: LANGUAGES,
+    // Not a secret: the browser needs this to create a push subscription.
+    pushKey: push.publicKey()
   });
 
   socket.on('hello', async (payload = {}) => {
@@ -275,7 +278,36 @@ io.on('connection', (socket) => {
   // watch a spinner on a quiet server.
   socket.on('notify', (payload = {}) => {
     peer.notifyWhenOnline = payload.on === true;
+    // Remembered by client id as well, so the interest survives the socket and
+    // a push can still reach them once they close the tab.
+    if (peer.clientId) {
+      if (peer.notifyWhenOnline) watchers.set(peer.clientId, true);
+      else watchers.delete(peer.clientId);
+    }
     socket.emit('notify:ok', { on: peer.notifyWhenOnline });
+  });
+
+  /**
+   * Stores a browser push subscription against this client.
+   *
+   * Tied to the client id rather than the socket, because the entire point is
+   * to reach someone whose socket is gone.
+   */
+  socket.on('push:subscribe', async (payload = {}) => {
+    if (!peer.clientId || !payload.subscription?.endpoint) return;
+    try {
+      await store.savePushSubscription(peer.clientId, payload.subscription);
+      socket.emit('push:ok', { subscribed: true });
+    } catch (error) {
+      console.warn('Push: could not store subscription —', error.message);
+      socket.emit('push:ok', { subscribed: false });
+    }
+  });
+
+  socket.on('push:unsubscribe', async (payload = {}) => {
+    if (!payload.endpoint) return;
+    await store.deletePushSubscription(payload.endpoint).catch(() => {});
+    socket.emit('push:ok', { subscribed: false });
   });
 
   /**
@@ -488,6 +520,15 @@ io.on('connection', (socket) => {
 
     io.to(targetSocketId).emit('call:incoming', { ringId, name: peer.name, country: peer.country });
     socket.emit('call:ringing', { ringId, name: targetName });
+
+    // Also push, in case their tab is buried or the phone is locked. This is
+    // the case push exists for — a ring nobody sees is a ring that failed.
+    push.sendTo(targetClientId, {
+      title: 'Friends Talk',
+      body: `${peer.name} is calling you`,
+      tag: 'incoming-call',
+      url: '/app'
+    }).catch(() => { /* never let a push failure disturb the ring */ });
 
     // Nobody should hear a phone ring forever.
     setTimeout(() => {
@@ -938,14 +979,55 @@ function emitWaiting(socket, peer) {
  * conversation it is advertising.
  */
 function pingWatchers(exceptSocketId) {
+  const notified = new Set();
+
   for (const [socketId, candidate] of peers) {
     if (socketId === exceptSocketId) continue;
     if (!candidate.notifyWhenOnline) continue;
     if (rooms.forSocket(socketId)) continue;
     if (matchmaker.pool.has(socketId)) continue;
     io.to(socketId).emit('someone:waiting', { waiting: matchmaker.size() });
+    if (candidate.clientId) notified.add(candidate.clientId);
+  }
+
+  // Push reaches the people who opted in but have no socket open at all, which
+  // is most of them — that is the whole point of the feature.
+  pushWaitingWatchers(notified).catch(() => {});
+}
+
+/**
+ * Rate-limited so a busy queue cannot turn into a stream of notifications.
+ *
+ * Somebody joining the queue every few seconds would otherwise buzz every
+ * watcher every few seconds, which is how people turn notifications off and
+ * never turn them back on.
+ */
+let lastWaitingPush = 0;
+const WAITING_PUSH_COOLDOWN_MS = 15 * 60 * 1000;
+
+async function pushWaitingWatchers(alreadyNotified) {
+  if (!push.isConfigured()) return;
+  if (Date.now() - lastWaitingPush < WAITING_PUSH_COOLDOWN_MS) return;
+  lastWaitingPush = Date.now();
+
+  for (const [clientId, peerRef] of watchers) {
+    if (alreadyNotified.has(clientId)) continue;
+    if (!peerRef) continue;
+    await push.sendTo(clientId, {
+      title: 'Friends Talk',
+      body: 'Someone is looking for a call right now.',
+      tag: 'someone-waiting',
+      url: '/app'
+    });
   }
 }
+
+/**
+ * Clients who asked to be told when the queue is busy, remembered by client id
+ * so the interest outlives the socket that expressed it.
+ * @type {Map<string, boolean>}
+ */
+const watchers = new Map();
 
 let sweepTimer = null;
 
@@ -1063,6 +1145,12 @@ function sanitizeCountry(value) {
 
 await store.init();
 startSweep();
+
+console.log(
+  push.init()
+    ? 'Push: notifications enabled.'
+    : 'Push: no VAPID keys — notifications are OFF. Generate them with scripts/make-vapid.mjs.'
+);
 
 // Check the credential before announcing the feature, so the log tells the
 // truth about what this process can actually do.

@@ -58,6 +58,11 @@ const INDEXES = {
   bans: [
     { key: { clientId: 1 }, unique: true, name: 'client_unique' },
     { key: { expiresAt: 1 }, expireAfterSeconds: 0, name: 'ttl' }
+  ],
+  pushSubscriptions: [
+    // The push service treats the endpoint as the subscription's identity.
+    { key: { endpoint: 1 }, unique: true, name: 'endpoint_unique' },
+    { key: { clientId: 1 }, name: 'by_client' }
   ]
 };
 

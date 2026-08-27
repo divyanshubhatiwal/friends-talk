@@ -6,7 +6,7 @@
 <title>Friends Talk — The Decentralized Voice Protocol</title>
 <meta name="description" content="An open-access protocol for anonymous, real-time voice and text connection. 100% peer-to-peer, non-custodial, zero video cameras, zero signups.">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#070b14">
+<meta name="theme-color" content="#06080e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Friends Talk">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -22,27 +22,29 @@
   <div class="wrap">
     <a class="brand" href="/">
       <span class="brand-ghost">👻</span>
-      Friends Talk
+      <span>Friends Talk</span>
     </a>
     <nav class="nav">
-      <a href="#markets" class="hide-sm">Markets</a>
-      <a href="#protocol" class="hide-sm">Protocol</a>
+      <a href="#markets" class="hide-sm">Channels</a>
+      <a href="#protocol" class="hide-sm">Architecture</a>
       <a href="#matrix" class="hide-sm">Matrix</a>
-      <a href="#faq" class="hide-sm">Inquiries</a>
+      <a href="#faq" class="hide-sm">FAQ</a>
       <a href="/about">About</a>
     </nav>
-    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark theme" onclick="(function(d){var c=d.getAttribute('data-theme')==='light'?'dark':'light';d.setAttribute('data-theme',c);localStorage.setItem('ft:theme',c)})(document.documentElement)">
-      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <circle cx="12" cy="12" r="5"/>
-        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-      </svg>
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-      </svg>
-    </button>
-    <a class="btn btn-gradient btn-sm" href="/app">
-      Launch App
-    </a>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark theme" onclick="(function(d){var c=d.getAttribute('data-theme')==='light'?'dark':'light';d.setAttribute('data-theme',c);localStorage.setItem('ft:theme',c)})(document.documentElement)">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="5"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <a class="btn btn-gradient btn-sm" href="/app">
+        Launch App
+      </a>
+    </div>
   </div>
 </header>
 
@@ -51,28 +53,33 @@
   <section class="hero">
     <div class="wrap">
       <div class="hero-product-badge">
-        <span>✨</span> Friends Talk Protocol v2.0
+        <span>⚡</span> Friends Talk Protocol v2.5 · Quantum Audio Mesh
       </div>
       <h1>
-        Spontaneous Voice for <span class="aave-grad-text">Everyone</span>
+        Spontaneous Voice for <span class="cyber-grad-text">Everyone</span>
       </h1>
       <p class="lede">
-        Put your conversations into the global stream, every second of every day.
-        Instant, anonymous, non-custodial human connection powered by direct WebRTC.
+        Enter the global conversation mesh. Instant, anonymous, non-custodial human voice connection powered by direct encrypted WebRTC.
       </p>
       <div class="hero-actions">
         <a class="btn btn-gradient btn-lg" href="/app?mode=voice">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0M12 18v4"/>
+          </svg>
           Start Voice Stream
         </a>
         <a class="btn btn-soft btn-lg" href="/app?mode=text">
-          Text Channel
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          Text Teletype
         </a>
       </div>
-      <p class="hero-note">Non-Custodial Audio · 100% Open Access · 18+ Adults Only</p>
+      <p class="hero-note">Non-Custodial Audio · 100% Peer-to-Peer · 18+ Adults Only</p>
     </div>
   </section>
 
-  <!-- Protocol Telemetry Stats Grid (Aave Market Stats Style) -->
+  <!-- Protocol Telemetry Stats Grid -->
   <div class="wrap">
     <div class="stats-grid">
       <div class="stat-card">
@@ -81,21 +88,21 @@
       </div>
       <div class="stat-card">
         <div class="num" id="stat-calls">—</div>
-        <div class="label">Live Streams Running</div>
+        <div class="label">Live Voice Streams</div>
       </div>
       <div class="stat-card">
-        <div class="num">100%</div>
-        <div class="label">Direct P2P Routing</div>
+        <div class="num cyber-grad-text">100%</div>
+        <div class="label">Direct P2P Encrypted</div>
       </div>
       <div class="stat-card">
-        <div class="num">$0.00</div>
-        <div class="label">Protocol Cost · Free Forever</div>
+        <div class="num pink-grad-text">0 ms</div>
+        <div class="label">Server Audio Latency</div>
       </div>
     </div>
   </div>
 
-  <!-- Markets / Channels for Every Strategy (Aave Market Showcase) -->
-  <section class="markets-showcase" id="markets">
+  <!-- Connection Channels -->
+  <section class="section" id="markets">
     <div class="wrap">
       <div class="section-head">
         <span class="section-tag">Connection Channels</span>
@@ -105,42 +112,42 @@
       <div class="market-cards-grid">
         <article class="market-card">
           <div class="market-card-top">
-            <span class="market-badge">General Purpose</span>
+            <span class="market-badge">Instant Serendipity</span>
             <h3>Global Audio Stream</h3>
-            <p>The broadest queue on Friends Talk with instant matching across all worldwide peers.</p>
+            <p>The core queue on Friends Talk with instantaneous matchmaking across worldwide peers with zero wait time.</p>
           </div>
           <div class="market-tokens">
-            <span class="token-pill">🎙️ Voice</span>
-            <span class="token-pill">🌐 Global</span>
-            <span class="token-pill">⚡ Instant</span>
-            <span class="token-pill">🔒 WebRTC</span>
+            <span class="token-pill">🎙️ Voice First</span>
+            <span class="token-pill">🌐 Global Mesh</span>
+            <span class="token-pill">⚡ Instant Match</span>
+            <span class="token-pill">🔒 WebRTC P2P</span>
           </div>
         </article>
 
         <article class="market-card">
           <div class="market-card-top">
-            <span class="market-badge">Privacy-Isolated</span>
+            <span class="market-badge">Privacy Shield</span>
             <h3>Zero-Knowledge Teletype</h3>
-            <p>Type silently before speaking. No audio stream is initialized until both participants consent.</p>
+            <p>Type silently before speaking. No audio stream is initialized until both participants mutually consent to escalate.</p>
           </div>
           <div class="market-tokens">
-            <span class="token-pill">💬 Text</span>
-            <span class="token-pill">🛡️ Screened</span>
-            <span class="token-pill">🕶️ Ephemeral</span>
-            <span class="token-pill">🚫 No Cam</span>
+            <span class="token-pill">💬 Pure Text</span>
+            <span class="token-pill">🛡️ AI Screened</span>
+            <span class="token-pill">🕶️ Ephemeral Session</span>
+            <span class="token-pill">🚫 No Camera</span>
           </div>
         </article>
 
         <article class="market-card">
           <div class="market-card-top">
-            <span class="market-badge">Strategy-Targeted</span>
+            <span class="market-badge">Precision Filters</span>
             <h3>Tag & Regional Hub</h3>
-            <p>Calibrate filters by continent or topic tags to connect with peers sharing your specific interests.</p>
+            <p>Calibrate filters by continent or topic tags to connect with peers sharing your specific interests, games, or languages.</p>
           </div>
           <div class="market-tokens">
-            <span class="token-pill">🏷️ Tags</span>
-            <span class="token-pill">🌍 Regions</span>
-            <span class="token-pill">🗣️ Languages</span>
+            <span class="token-pill">🏷️ Custom Tags</span>
+            <span class="token-pill">🌍 Regional Nodes</span>
+            <span class="token-pill">🗣️ Live Subtitles</span>
             <span class="token-pill">🎮 Minigames</span>
           </div>
         </article>
@@ -148,13 +155,13 @@
     </div>
   </section>
 
-  <!-- Protocol Capabilities (Aave Security & Tech Stack) -->
+  <!-- Protocol Architecture -->
   <section class="section" id="protocol">
     <div class="wrap">
       <div class="section-head">
         <span class="section-tag">Protocol Architecture</span>
-        <h2>Designed for resilience and absolute privacy</h2>
-        <p>Engineered without central audio storage, biometric profiling, or camera surveillance.</p>
+        <h2>Engineered for resilience and total privacy</h2>
+        <p>Built without central audio storage, biometric profiling, or camera surveillance.</p>
       </div>
       <div class="grid">
         <article class="card">
@@ -164,7 +171,7 @@
             </svg>
           </div>
           <h3>Non-Custodial Audio</h3>
-          <p>Audio packets travel directly between participant browsers over encrypted WebRTC peer-to-peer data channels.</p>
+          <p>Audio packets travel directly between participant browsers over end-to-end encrypted WebRTC channels. The server never hears a byte.</p>
         </article>
 
         <article class="card">
@@ -174,7 +181,7 @@
             </svg>
           </div>
           <h3>Automated Defense Grid</h3>
-          <p>Incoming text and media pass through automated neural safety filters. One-click permanent blocking sticks across sessions.</p>
+          <p>Text and image transfers pass through automated neural safety filters. One-click permanent blocking persists across sessions.</p>
         </article>
 
         <article class="card">
@@ -194,7 +201,7 @@
             </svg>
           </div>
           <h3>Stateful Reconnect</h3>
-          <p>Session tokens remain in local client storage. If an atmospheric network glitch interrupts a call, reconnect in one click.</p>
+          <p>Session tokens remain in local storage. If an atmospheric glitch interrupts a call, reconnect in one click with your recent partner.</p>
         </article>
 
         <article class="card">
@@ -204,7 +211,7 @@
             </svg>
           </div>
           <h3>Interactive Call Canvas</h3>
-          <p>Play lighthearted co-op mini-games directly in the call workspace to eliminate tension and spark genuine discussion.</p>
+          <p>Play lighthearted co-op minigames (Tic-Tac-Toe, Pitch Matcher) and use shared pads directly in the call workspace.</p>
         </article>
 
         <article class="card">
@@ -213,14 +220,14 @@
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
           </div>
-          <h3>Real-Time Teletype Hybrid</h3>
-          <p>Seamlessly toggle between voice and text messaging without breaking the stream connection.</p>
+          <h3>Hybrid Voice & Text</h3>
+          <p>Seamlessly toggle between real-time voice, typed speech synthesis, and live translated captions without breaking the call.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <!-- Protocol Sequence -->
+  <!-- Execution Flow -->
   <section class="section">
     <div class="wrap">
       <div class="section-head">
@@ -232,17 +239,17 @@
         <div class="step">
           <div class="step-number">01</div>
           <h4>Client Handshake</h4>
-          <p>Open in any modern browser, verify 18+ maturity status, and authorize local mic access.</p>
+          <p>Open in any modern browser, verify 18+ maturity status, and authorize local audio permissions.</p>
         </div>
         <div class="step">
           <div class="step-number">02</div>
-          <h4>Stream Parameters</h4>
-          <p>Optionally select regional target nodes or interest tags, or stream globally.</p>
+          <h4>Configure Parameters</h4>
+          <p>Optionally select regional target nodes or interest tags, or jump directly into the global queue.</p>
         </div>
         <div class="step">
           <div class="step-number">03</div>
           <h4>P2P Discovery</h4>
-          <p>The queue matches you with an active peer. Audio connects directly via WebRTC.</p>
+          <p>The queue matches you with an active peer. Audio connects directly via high-speed WebRTC.</p>
         </div>
         <div class="step">
           <div class="step-number">04</div>
@@ -267,11 +274,11 @@
             <tr><th>Protocol Vector</th><th>Legacy Video Roulette</th><th>Friends Talk Protocol</th></tr>
           </thead>
           <tbody>
-            <tr><td>Camera Optics Required</td><td class="no">Mandatory</td><td class="yes">Never (Pure Audio)</td></tr>
-            <tr><td>Visual Appearance Bias</td><td class="no">Immediate judgment</td><td class="yes">Impossible</td></tr>
-            <tr><td>Account Credentials Stored</td><td class="no">Often requires email / login</td><td class="yes">Zero credentials</td></tr>
+            <tr><td>Camera Optics Required</td><td class="no">Mandatory</td><td class="yes">Never (Pure Audio First)</td></tr>
+            <tr><td>Visual Appearance Bias</td><td class="no">Immediate judgment</td><td class="yes">Zero Bias</td></tr>
+            <tr><td>Account Credentials Stored</td><td class="no">Requires email / login</td><td class="yes">Zero credentials</td></tr>
             <tr><td>Exposure to Toxic Imagery</td><td class="no">High risk</td><td class="yes">Zero visual exposure</td></tr>
-            <tr><td>Screen-Free Operation</td><td class="no">Must look at screen</td><td class="yes">Headphones & relax</td></tr>
+            <tr><td>Screen-Free Operation</td><td class="no">Must stare at screen</td><td class="yes">Put headphones on & relax</td></tr>
             <tr><td>Low-Vision Accessibility</td><td class="no">Poorly adapted</td><td class="yes">First-class by design</td></tr>
           </tbody>
         </table>
@@ -279,7 +286,7 @@
     </div>
   </section>
 
-  <!-- Decoded Inquiries (FAQ) -->
+  <!-- FAQ -->
   <section class="section" id="faq">
     <div class="wrap">
       <div class="section-head">
@@ -292,8 +299,8 @@
           <p>Yes. Voice streaming, text teletype, global filters, and peer bookmarking are 100% free with zero paywalls.</p>
         </details>
         <details>
-          <summary>Do I need an account or cryptographic wallet?</summary>
-          <p>No. No login, no email, and no wallet required. You receive an ephemeral session handle that dissolves when you leave.</p>
+          <summary>Do I need an account or sign up?</summary>
+          <p>No. No login, no email, and no phone number required. You receive an ephemeral session token that dissolves when you leave.</p>
         </details>
         <details>
           <summary>Are audio calls recorded on servers?</summary>
@@ -311,7 +318,7 @@
     </div>
   </section>
 
-  <!-- Radiant Call to Action Banner -->
+  <!-- CTA Banner -->
   <div class="wrap">
     <section class="cta">
       <h2>Join the global voice stream</h2>
@@ -328,8 +335,8 @@
     <div class="footer-grid">
       <div>
         <h5>Protocol</h5>
-        <a href="/app">Voice Market</a>
-        <a href="/app?mode=text">Teletype Market</a>
+        <a href="/app">Voice Channel</a>
+        <a href="/app?mode=text">Teletype Channel</a>
         <a href="/#protocol">Architecture</a>
       </div>
       <div>
@@ -356,13 +363,16 @@
 </footer>
 
 <script>
-  // Live stats telemetry updater
   async function refreshStats() {
     try {
       const res = await fetch('/api/stats');
       const s = await res.json();
-      document.getElementById('stat-online').textContent = s.online.toLocaleString();
-      document.getElementById('stat-calls').textContent = s.rooms.toLocaleString();
+      if (document.getElementById('stat-online')) {
+        document.getElementById('stat-online').textContent = s.online.toLocaleString();
+      }
+      if (document.getElementById('stat-calls')) {
+        document.getElementById('stat-calls').textContent = s.rooms.toLocaleString();
+      }
     } catch { /* decorative */ }
   }
   refreshStats();

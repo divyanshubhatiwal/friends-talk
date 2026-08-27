@@ -41,7 +41,8 @@
     selfName: 'You',
     speakIncoming: false,
     speakTyped: false,
-    callbackToken: null
+    callbackToken: null,
+    pushKey: null
   };
 
   let pc = null;
@@ -328,15 +329,32 @@
 
   el.notify.addEventListener('change', async () => {
     const on = el.notify.checked;
+
     // Browsers only grant this from a user gesture, which a change event is.
     if (on && window.Notification && Notification.permission === 'default') {
       await Notification.requestPermission();
     }
     if (on && window.Notification && Notification.permission === 'denied') {
       toast('Notifications are blocked in your browser settings', 'err');
+      el.notify.checked = false;
+      store.write('notify', false);
+      socket.emit('notify', { on: false });
+      return;
     }
+
     store.write('notify', on);
     socket.emit('notify', { on });
+
+    // Push is what reaches someone once the tab is gone; the in-page toast
+    // only works while they are still here.
+    if (on && Notification.permission === 'granted') {
+      const subscribed = await subscribeToPush();
+      toast(subscribed
+        ? 'You will be notified even when this tab is closed'
+        : 'Notifications on while this tab is open');
+    } else if (!on) {
+      await unsubscribeFromPush();
+    }
   });
 
   el.myCountry.addEventListener('change', () => {
@@ -941,6 +959,60 @@
     const standalone = window.matchMedia('(display-mode: standalone)').matches ||
       window.navigator.standalone === true;
     if (standalone) el.installBtn.hidden = true;
+  }
+
+  // ---------------------------------------------------- push notifications
+
+  /**
+   * Subscribes this browser to push, so a ring or a busy queue can reach
+   * someone whose tab is closed.
+   *
+   * The permission prompt is deliberately not fired on page load. A site that
+   * asks the moment it opens gets denied, and a denial is sticky — the browser
+   * will not ask again. So this only runs when the user turns the notify
+   * switch on, which is them asking for it.
+   */
+  function urlBase64ToUint8Array(base64) {
+    const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4))
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const raw = atob(padded);
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+
+  async function subscribeToPush() {
+    if (!state.pushKey) return false;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+
+      // Reuse an existing subscription rather than creating a second one.
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,   // required by Chrome, and honest anyway
+          applicationServerKey: urlBase64ToUint8Array(state.pushKey)
+        });
+      }
+
+      socket.emit('push:subscribe', { subscription: subscription.toJSON() });
+      return true;
+    } catch (error) {
+      console.warn('[friends-talk] push subscribe failed:', error.message);
+      return false;
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription) return;
+      socket.emit('push:unsubscribe', { endpoint: subscription.endpoint });
+      await subscription.unsubscribe();
+    } catch { /* nothing useful to do if teardown fails */ }
   }
 
   // --------------------------------------------------------- frame driver
@@ -2417,6 +2489,13 @@
     paintStats(payload.stats);
 
     // Caption controls only exist if the server can actually transcribe.
+    state.pushKey = payload.pushKey || null;
+    // Re-register a subscription the browser already granted, so a returning
+    // user does not have to switch it on again.
+    if (state.pushKey && store.read('notify', false) && window.Notification?.permission === 'granted') {
+      subscribeToPush();
+    }
+
     state.voiceFeatures = payload.voiceFeatures === true;
     el.captionSettings.hidden = !state.voiceFeatures;
     if (state.voiceFeatures) fillLanguages(payload.languages || {});
