@@ -12,7 +12,7 @@
  * whole product is live state, and stale live state is a lie.
  */
 
-const VERSION = 'ft-v2-sunset';
+const VERSION = 'ft-v3-friendly';
 const SHELL = `shell-${VERSION}`;
 
 // Enough to render the interface with no network. The socket connection fails

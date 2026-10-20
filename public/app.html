@@ -72,10 +72,10 @@
   <aside class="pane pane-left" id="pane-left">
     <div class="tabs" role="tablist">
       <button class="tab is-active" data-panel="panel-filters" role="tab">Filters</button>
-      <button class="tab" data-panel="panel-lounges" role="tab">Lounges</button>
+      <button class="tab" data-panel="panel-lounges" role="tab">Rooms</button>
       <button class="tab" data-panel="panel-recent" role="tab">Recent</button>
       <button class="tab" data-panel="panel-friends" role="tab">Friends</button>
-      <button class="tab" data-panel="panel-achievements" role="tab">🏆</button>
+      <button class="tab" data-panel="panel-achievements" role="tab">Badges</button>
     </div>
 
     <div class="panel is-active" id="panel-filters">
@@ -258,6 +258,17 @@
         <ul class="roster-list" id="roster-list"></ul>
       </div>
 
+      <!-- Idle-only welcome: what this is, and the one choice that matters. -->
+      <div class="welcome" id="welcome">
+        <h1 class="welcome-title">Ready to meet someone?</h1>
+        <p class="welcome-sub">Anonymous and free. No sign-up, no camera. Choose how you want to talk:</p>
+        <div class="mode-chips" id="stage-modes" role="radiogroup" aria-label="How do you want to talk?">
+          <button class="mode-chip" data-mode="voice" role="radio" aria-checked="true"><span aria-hidden="true">🎙️</span> Voice</button>
+          <button class="mode-chip" data-mode="text" role="radio" aria-checked="false"><span aria-hidden="true">💬</span> Text</button>
+          <button class="mode-chip" data-mode="group" role="radio" aria-checked="false"><span aria-hidden="true">👥</span> Group</button>
+        </div>
+      </div>
+
       <div class="viz" id="viz" aria-hidden="true"></div>
 
       <p class="status-line" id="status">Press call to meet someone new.</p>
@@ -313,40 +324,47 @@
         <span class="cap" id="call-cap">Call</span>
       </button>
 
+      <div class="quick-links" id="quick-links">
+        <button class="quick-link" type="button" data-open="panel-filters"><span aria-hidden="true">🎯</span> Interests &amp; mood</button>
+        <button class="quick-link" type="button" data-open="panel-lounges"><span aria-hidden="true">🏠</span> Topic rooms</button>
+        <button class="quick-link" type="button" data-open="panel-friends"><span aria-hidden="true">⭐</span> Friends</button>
+      </div>
+      <p class="kbd-hint" id="kbd-hint">Tip: press <kbd>Space</kbd> to call, <kbd>Esc</kbd> to close panels.</p>
+
       <!-- Only rendered during a call — an idle screen shows none of this. -->
       <div class="controls" id="controls" hidden>
-        <button class="ctrl" id="btn-mute" title="Mute" aria-label="Mute">
+        <button class="ctrl" id="btn-mute" data-label="Mute" title="Mute" aria-label="Mute">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-next" title="Next person" aria-label="Next person">
+        <button class="ctrl" id="btn-next" data-label="Next" title="Next person" aria-label="Next person">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M5 4l10 8-10 8zM19 5v14"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-voice" title="Switch to voice" aria-label="Switch to voice">
+        <button class="ctrl" id="btn-voice" data-label="Voice" title="Switch to voice" aria-label="Switch to voice">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-screen" title="Share your screen" aria-label="Share your screen" aria-pressed="false">
+        <button class="ctrl" id="btn-screen" data-label="Share" title="Share your screen" aria-label="Share your screen" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-pad" title="Shared notepad" aria-label="Shared notepad" aria-pressed="false">
+        <button class="ctrl" id="btn-pad" data-label="Notes" title="Shared notepad" aria-label="Shared notepad" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M4 4a2 2 0 0 1 2-2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>
             <path d="M14 2v6h6M8 13h8M8 17h5"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-game" title="Play a game" aria-label="Play a game">
+        <button class="ctrl" id="btn-game" data-label="Games" title="Play a game" aria-label="Play a game">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
           </svg>
         </button>
-        <button class="ctrl" id="btn-watch" title="Watch Party (YouTube)" aria-label="Watch Party" aria-pressed="false">
+        <button class="ctrl" id="btn-watch" data-label="Watch" title="Watch Party (YouTube)" aria-label="Watch Party" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <rect x="2" y="4" width="20" height="15" rx="3"/><polygon points="10 9 15 12 10 15 10 9" fill="currentColor"/>
           </svg>
@@ -354,7 +372,7 @@
 
         <!-- Ambiance Soundscape -->
         <div class="overflow">
-          <button class="ctrl" id="btn-soundscape" title="Ambiance Soundscape" aria-label="Ambiance Soundscape">
+          <button class="ctrl" id="btn-soundscape" data-label="Ambience" title="Ambiance Soundscape" aria-label="Ambiance Soundscape">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9M16 14v6M8 14v6M12 16v6"/>
             </svg>
@@ -378,7 +396,7 @@
 
         <!-- Voice Modulator & Studio Audio FX -->
         <div class="overflow">
-          <button class="ctrl" id="btn-modifier" title="Voice Modulator & Studio FX" aria-label="Voice Modulator">
+          <button class="ctrl" id="btn-modifier" data-label="Voice FX" title="Voice Modulator & Studio FX" aria-label="Voice Modulator">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M12 2v20M17 5v14M22 9v6M7 9v6M2 5v14"/>
             </svg>
@@ -399,7 +417,7 @@
 
         <!-- Soundboard -->
         <div class="overflow">
-          <button class="ctrl" id="btn-soundboard" title="Soundboard" aria-label="Soundboard">
+          <button class="ctrl" id="btn-soundboard" data-label="Sounds" title="Soundboard" aria-label="Soundboard">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>
             </svg>
@@ -415,14 +433,14 @@
           </div>
         </div>
 
-        <button class="ctrl" id="btn-friend" title="Add friend" aria-label="Add friend">
+        <button class="ctrl" id="btn-friend" data-label="Add friend" title="Add friend" aria-label="Add friend">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6"/>
           </svg>
         </button>
 
         <div class="overflow">
-          <button class="ctrl" id="btn-more" title="More" aria-label="More actions" aria-expanded="false">
+          <button class="ctrl" id="btn-more" data-label="More" title="More" aria-label="More actions" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>
             </svg>

@@ -9,7 +9,7 @@
 }
 
 :root {
-  --pane: 290px;
+  --pane: 310px;
   --chat: 340px;
   --bar: 64px;
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
@@ -2455,5 +2455,274 @@ details.more summary {
   width: 100%;
   height: 100%;
   border-radius: 50%;
+}
+
+/* ================================================================
+   Friendliness pass — idle welcome, labelled controls, phone sheets
+   ================================================================ */
+
+/* ------------------------------------------------ Idle welcome */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  max-width: 440px;
+  animation: dockFloatIn 0.4s var(--ease-spring);
+}
+.welcome-title {
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--text);
+}
+.welcome-sub {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.mode-chips {
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+  margin-top: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.mode-chip {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-spring), color 0.2s ease;
+}
+.mode-chip:hover { color: var(--text); }
+.mode-chip.is-active {
+  background: var(--grad-cyber);
+  color: #1a0f0b;
+  box-shadow: 0 4px 16px var(--accent-glow);
+}
+
+.quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.quick-link {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.quick-link:hover {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg-card);
+}
+.kbd-hint {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.kbd-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-card);
+}
+/* Keyboard tips mean nothing on a touchscreen. */
+@media (hover: none) { .kbd-hint { display: none; } }
+
+/* The welcome and its shortcuts belong to the idle screen only. */
+body[data-phase]:not([data-phase="idle"]) .welcome,
+body[data-phase]:not([data-phase="idle"]) .quick-links,
+body[data-phase]:not([data-phase="idle"]) .kbd-hint {
+  display: none;
+}
+/* The bars only mean something once there is a voice to show. */
+body[data-phase="idle"] .viz { display: none; }
+
+/* Hang up must never look like Call. */
+.call-btn.live {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 10px 40px var(--danger-glow), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+}
+.call-btn.live::before { border-color: rgba(239, 68, 68, 0.4); }
+
+/* Searching: make the wait feel alive rather than stuck. */
+.call-btn.searching::before {
+  border-style: solid;
+  border-color: var(--accent) transparent var(--accent) transparent;
+  animation-duration: 1.4s;
+}
+
+/* ------------------------------------------------ Labelled call controls */
+/* Twelve unlabelled circles is a guessing game. Each one now says what it is. */
+.controls {
+  gap: 22px 10px;
+  padding: 12px 16px 28px;
+  border-radius: var(--radius-lg);
+  max-width: 560px;
+}
+.controls .ctrl[data-label]::after {
+  content: attr(data-label);
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.controls .ctrl:hover::after,
+.controls .ctrl.is-active::after { color: var(--text); }
+.controls .ctrl.danger,
+.controls .ctrl[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ------------------------------------------------ Unread dot on the chat button */
+.bar-btn { position: relative; }
+.bar-btn.has-unread::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-pane);
+}
+
+/* ------------------------------------------------ Sidebar tabs fit any width */
+.pane-left .tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pane-left .tabs::-webkit-scrollbar { display: none; }
+.pane-left .tabs { gap: 2px; padding: 10px 6px; }
+.pane-left .tab {
+  flex: 1 0 auto;
+  padding: 8px 6px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.app-bar .brand { white-space: nowrap; }
+
+/* ------------------------------------------------ Drawers and phone sheets */
+#sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+#sheet-scrim.is-open { opacity: 1; }
+
+@media (max-width: 960px) {
+  /* The closed drawers sit just off-screen; without clipping they widen the
+     page and the whole app scrolls sideways on phones. */
+  .app-main {
+    overflow: hidden;
+    /* Lets the drawers stack above the scrim, which lives outside this box. */
+    z-index: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-bar {
+    gap: 8px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .presence { padding: 6px 10px; gap: 6px; }
+
+  /* Phones: the panes become bottom sheets with a grab handle. */
+  .pane-left, .pane-right {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 84%;
+    border: 1px solid var(--border-bright);
+    border-bottom: none;
+    border-radius: 22px 22px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(105%);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  }
+  .pane-left.is-open, .pane-right.is-open { transform: translateY(0); }
+  .pane-left::before, .pane-right::before {
+    content: '';
+    flex: none;
+    align-self: center;
+    width: 40px;
+    height: 4px;
+    margin: 8px 0 2px;
+    border-radius: 4px;
+    background: var(--border-bright);
+  }
+  .pane-left .tabs { background: transparent; }
+
+  .welcome-sub { font-size: 0.9rem; }
+  .mode-chip { padding: 0 14px; }
+
+  /* A tidy grid of labelled buttons instead of three ragged rows. */
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    justify-items: center;
+    width: 100%;
+    padding: 12px 8px 30px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--bg-raised);
+  }
+  .controls[hidden] { display: none; }
+  .ctrl { width: 46px; height: 46px; }
+
+  /* Pop-up menus open as a panel across the screen instead of hanging off
+     a small button and running past the edge. */
+  .controls .menu {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: none;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .controls .menu button { min-height: 44px; }
+}
+
+@media (max-width: 400px) {
+  .app-bar .brand span { display: none; }
 }
 

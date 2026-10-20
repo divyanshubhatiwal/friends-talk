@@ -218,8 +218,13 @@
     group: 'Join a small room of up to 5 people. Opens one if none has space.'
   };
 
+  // The big button says what it will do in the chosen mode, not just "Call".
+  const IDLE_CAPTIONS = { voice: 'Call', text: 'Chat', group: 'Join' };
+  const stageModes = $('stage-modes');
+
   function setMode(next) {
-    for (const seg of modeSeg.querySelectorAll('.seg')) {
+    // The sidebar control and the welcome chips are two views of one setting.
+    for (const seg of document.querySelectorAll('#mode-seg .seg, #stage-modes .mode-chip')) {
       const on = seg.dataset.mode === next;
       seg.classList.toggle('is-active', on);
       seg.setAttribute('aria-checked', String(on));
@@ -227,7 +232,20 @@
     state.mode = next;
     store.write('mode', next);
     if (el.modeHint) el.modeHint.textContent = MODE_HINTS[next] || '';
+    if (state.phase === 'idle') paintIdle();
   }
+
+  function paintIdle() {
+    el.callCap.textContent = IDLE_CAPTIONS[state.mode] || 'Call';
+    el.callBtn.setAttribute('aria-label', state.mode === 'group'
+      ? 'Join a group room' : state.mode === 'text' ? 'Start a text chat' : 'Call a stranger');
+    setStatus(MODE_HINTS[state.mode] || 'Press call to meet someone new.');
+  }
+
+  stageModes.addEventListener('click', (event) => {
+    const chip = event.target.closest('.mode-chip');
+    if (chip) setMode(chip.dataset.mode);
+  });
 
   el.mode = {
     get value() { return modeSeg.querySelector('.seg.is-active')?.dataset.mode || 'voice'; },
@@ -2263,7 +2281,7 @@
       no_target: 'Nobody to call'
     };
     toast(messages[reason] || 'Could not connect the call', 'err');
-    if (state.phase === 'idle') setStatus('Press call to meet someone new.');
+    if (state.phase === 'idle') paintIdle();
   });
 
   el.ringAccept.addEventListener('click', async () => {
@@ -2665,6 +2683,8 @@
     const live = state.phase === 'matched' || state.phase === 'live';
     const searching = state.phase === 'searching';
 
+    // Drives the idle-only welcome and quick links in CSS.
+    document.body.dataset.phase = state.phase;
     el.callBtn.classList.toggle('searching', searching);
     el.callBtn.classList.toggle('live', live);
     el.callCap.textContent = live ? 'Hang up' : searching ? 'Cancel' : 'Call';
@@ -2696,7 +2716,7 @@
     el.image.disabled = !live;
     if (el.reactionDock) el.reactionDock.hidden = !live;
 
-    if (state.phase === 'idle') setStatus('Press call to meet someone new.');
+    if (state.phase === 'idle') paintIdle();
   }
 
   el.callBtn.addEventListener('click', () => {
@@ -2794,6 +2814,14 @@
     el.chatLog.appendChild(node);
     trimChatLog();
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
+
+    // On phones the chat is a closed sheet; a dot on its button says there is
+    // something to read without popping the sheet open over the call.
+    const chatPane = $('pane-right');
+    if (from !== 'me' && from !== 'system' && !chatPane.classList.contains('is-open') &&
+        getComputedStyle(chatPane).position === 'absolute') {
+      $('toggle-right').classList.add('has-unread');
+    }
   }
 
   function sendChat() {
@@ -3872,6 +3900,7 @@
 
     if (opening) {
       pane.classList.add('is-open');
+      if (pane === paneRight) $('toggle-right').classList.remove('has-unread');
       scrim.hidden = false;
       // Next frame, so the transition has a start state to animate from.
       requestAnimationFrame(() => scrim.classList.add('is-open'));
@@ -3889,9 +3918,22 @@
   });
 
   // Returning to a desktop width should not leave a half-open sheet behind.
+  // Matches the 960px breakpoint where the panes stop being drawers in CSS.
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 760) closeSheets();
+    if (window.innerWidth > 960) closeSheets();
   });
+
+  // Welcome-screen shortcuts into the sidebar: switch to the tab, and on
+  // phones also slide the sheet up, since the sidebar is otherwise hidden.
+  for (const link of document.querySelectorAll('.quick-link')) {
+    link.addEventListener('click', () => {
+      document.querySelector(`.tab[data-panel="${link.dataset.open}"]`)?.click();
+      if (getComputedStyle(paneLeft).position === 'absolute' &&
+          !paneLeft.classList.contains('is-open')) {
+        toggleSheet(paneLeft);
+      }
+    });
+  }
 
   // Sidebar tabs — filters, lounges, recent calls, and friends share one column
   for (const tab of document.querySelectorAll('.tab')) {
