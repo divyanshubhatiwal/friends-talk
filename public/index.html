@@ -6,7 +6,7 @@
 <title>Friends Talk — The Decentralized Voice Protocol</title>
 <meta name="description" content="An open-access protocol for anonymous, real-time voice and text connection. 100% peer-to-peer, non-custodial, zero video cameras, zero signups.">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#06080e">
+<meta name="theme-color" content="#0f0b0d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Friends Talk">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -50,7 +50,7 @@
 
 <main>
   <!-- Hero Section -->
-  <section class="hero">
+  <section class="hero reveal">
     <div class="wrap">
       <div class="hero-product-badge">
         <span>⚡</span> Friends Talk Protocol v2.5 · Quantum Audio Mesh
@@ -81,7 +81,7 @@
 
   <!-- Protocol Telemetry Stats Grid -->
   <div class="wrap">
-    <div class="stats-grid">
+    <div class="stats-grid reveal-stagger reveal">
       <div class="stat-card">
         <div class="num" id="stat-online">—</div>
         <div class="label">Active Beacons Online</div>
@@ -104,12 +104,12 @@
   <!-- Connection Channels -->
   <section class="section" id="markets">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <span class="section-tag">Connection Channels</span>
         <h2>Channels for every conversation</h2>
         <p>From casual serendipity to targeted language practice, choose the stream that matches your intent.</p>
       </div>
-      <div class="market-cards-grid">
+      <div class="market-cards-grid reveal-stagger reveal">
         <article class="market-card">
           <div class="market-card-top">
             <span class="market-badge">Instant Serendipity</span>
@@ -158,12 +158,12 @@
   <!-- Protocol Architecture -->
   <section class="section" id="protocol">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <span class="section-tag">Protocol Architecture</span>
         <h2>Engineered for resilience and total privacy</h2>
         <p>Built without central audio storage, biometric profiling, or camera surveillance.</p>
       </div>
-      <div class="grid">
+      <div class="grid reveal-stagger reveal">
         <article class="card">
           <div class="icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -230,12 +230,12 @@
   <!-- Execution Flow -->
   <section class="section">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <span class="section-tag">Execution Flow</span>
         <h2>How the protocol operates</h2>
         <p>Four streamlined phases requiring zero identity disclosure.</p>
       </div>
-      <div class="steps">
+      <div class="steps reveal-stagger reveal">
         <div class="step">
           <div class="step-number">01</div>
           <h4>Client Handshake</h4>
@@ -263,12 +263,12 @@
   <!-- Comparison Matrix Table -->
   <section class="section" id="matrix">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <span class="section-tag">Comparison Matrix</span>
         <h2>Why voice protocol beats video roulette</h2>
         <p>Eliminating cameras removes 99% of toxicity, exploitation, and appearance anxiety.</p>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll reveal">
         <table class="compare">
           <thead>
             <tr><th>Protocol Vector</th><th>Legacy Video Roulette</th><th>Friends Talk Protocol</th></tr>
@@ -289,11 +289,11 @@
   <!-- FAQ -->
   <section class="section" id="faq">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head reveal">
         <span class="section-tag">Decoded Inquiries</span>
         <h2>Frequently asked questions</h2>
       </div>
-      <div class="faq">
+      <div class="faq reveal">
         <details open>
           <summary>Is the Friends Talk protocol completely free?</summary>
           <p>Yes. Voice streaming, text teletype, global filters, and peer bookmarking are 100% free with zero paywalls.</p>
@@ -320,7 +320,7 @@
 
   <!-- CTA Banner -->
   <div class="wrap">
-    <section class="cta">
+    <section class="cta reveal">
       <h2>Join the global voice stream</h2>
       <p>Zero friction, zero cameras, zero judgment. Launch the app and connect with a human across the world right now.</p>
       <a class="btn btn-gradient btn-lg" href="/app">
@@ -363,6 +363,27 @@
 </footer>
 
 <script>
+  // Scroll-reveal Intersection Observer
+  (function() {
+    const obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) {
+          e.target.classList.add('is-visible');
+          obs.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal, .reveal-stagger').forEach(function(el) {
+      obs.observe(el);
+    });
+
+    // Immediately reveal hero (above fold)
+    var hero = document.querySelector('.hero.reveal');
+    if (hero) hero.classList.add('is-visible');
+  })();
+
+  // Live stats
   async function refreshStats() {
     try {
       const res = await fetch('/api/stats');

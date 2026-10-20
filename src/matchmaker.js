@@ -101,6 +101,9 @@ export class Matchmaker {
     const shared = a.interests.filter((tag) => b.interests.includes(tag));
     score += shared.length * 40;
 
+    // Matching moods: people wanting the same energy pair faster.
+    if (a.mood && b.mood && a.mood === b.mood) score += 30;
+
     // Both sides filtered on country and both are satisfied — reward it.
     if (a.countries.length && b.countries.length) score += 10;
 

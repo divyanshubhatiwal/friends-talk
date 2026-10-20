@@ -302,3 +302,127 @@ export async function isBanned(clientId) {
   const row = memory.bans.get(clientId);
   return Boolean(row && row.expiresAt > new Date());
 }
+
+// -------------------------------------------------------------------- ratings
+
+export async function saveRating({ clientId, fromClientId, rating, roomId }) {
+  if (!clientId || !fromClientId) return;
+  const doc = {
+    clientId, fromClientId, rating: Math.min(5, Math.max(1, rating)),
+    roomId, at: new Date(), expiresAt: expiresIn(RETENTION.rating)
+  };
+
+  if (db) {
+    await db.collection('ratings').insertOne(doc);
+    return;
+  }
+  if (!memory.ratings) memory.ratings = [];
+  memory.ratings.push(doc);
+  if (memory.ratings.length > 500) memory.ratings.shift();
+}
+
+export async function averageRating(clientId) {
+  if (!clientId) return null;
+
+  if (db) {
+    const result = await db.collection('ratings').aggregate([
+      { $match: { clientId } },
+      { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } }
+    ]).toArray();
+    if (!result.length) return null;
+    return { avg: Math.round(result[0].avg * 10) / 10, count: result[0].count };
+  }
+  if (!memory.ratings) return null;
+  const mine = memory.ratings.filter((r) => r.clientId === clientId);
+  if (!mine.length) return null;
+  const avg = mine.reduce((s, r) => s + r.rating, 0) / mine.length;
+  return { avg: Math.round(avg * 10) / 10, count: mine.length };
+}
+
+// ---------------------------------------------------------------- achievements
+
+export async function saveAchievement(clientId, type, name) {
+  if (!clientId || !type) return;
+  const doc = { clientId, type, name, at: new Date() };
+
+  if (db) {
+    await db.collection('achievements').updateOne(
+      { clientId, type },
+      { $setOnInsert: doc },
+      { upsert: true }
+    );
+    return;
+  }
+  if (!memory.achievements) memory.achievements = [];
+  if (memory.achievements.find((a) => a.clientId === clientId && a.type === type)) return;
+  memory.achievements.push(doc);
+}
+
+export async function listAchievements(clientId) {
+  if (!clientId) return [];
+
+  if (db) {
+    return db.collection('achievements')
+      .find({ clientId }, { projection: { type: 1, name: 1, at: 1, _id: 0 } })
+      .toArray();
+  }
+  if (!memory.achievements) return [];
+  return memory.achievements
+    .filter((a) => a.clientId === clientId)
+    .map(({ type, name, at }) => ({ type, name, at }));
+}
+
+// ----------------------------------------------------------------- user stats
+
+export async function incrementStat(clientId, stat, amount = 1) {
+  if (!clientId || !stat) return;
+
+  if (db) {
+    await db.collection('userStats').updateOne(
+      { clientId },
+      { $inc: { [stat]: amount } },
+      { upsert: true }
+    );
+    return;
+  }
+  if (!memory.userStats) memory.userStats = new Map();
+  const existing = memory.userStats.get(clientId) || { clientId };
+  existing[stat] = (existing[stat] || 0) + amount;
+  memory.userStats.set(clientId, existing);
+}
+
+export async function addToSet(clientId, stat, value) {
+  if (!clientId || !stat) return;
+
+  if (db) {
+    await db.collection('userStats').updateOne(
+      { clientId },
+      { $addToSet: { [stat]: value } },
+      { upsert: true }
+    );
+    return;
+  }
+  if (!memory.userStats) memory.userStats = new Map();
+  const existing = memory.userStats.get(clientId) || { clientId };
+  if (!existing[stat]) existing[stat] = [];
+  if (Array.isArray(existing[stat]) && !existing[stat].includes(value)) {
+    existing[stat].push(value);
+  }
+  memory.userStats.set(clientId, existing);
+}
+
+export async function getStats(clientId) {
+  if (!clientId) return {};
+
+  if (db) {
+    const doc = await db.collection('userStats').findOne({ clientId });
+    if (!doc) return {};
+    const { _id, clientId: _, ...stats } = doc;
+    return stats;
+  }
+  if (!memory.userStats) return {};
+  const doc = memory.userStats.get(clientId);
+  if (!doc) return {};
+  const { clientId: _, ...stats } = doc;
+  return stats;
+}

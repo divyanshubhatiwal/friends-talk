@@ -28,13 +28,18 @@ import {
   submitPitchScore,
   newTriviaGame,
   submitTriviaAnswer,
-  newDrawingGame
+  expireTriviaQuestion,
+  newDrawingGame,
+  newReflexGame,
+  submitReflexBuzzer
 } from './src/rooms.js';
 import { GroupRegistry, MAX_MEMBERS } from './src/groups.js';
 import { screenText, screenImage, VERDICT } from './src/moderation.js';
 import { randomName } from './src/names.js';
 import * as store from './src/storage/repository.js';
 import * as push from './src/push.js';
+import { limiters } from './src/ratelimit.js';
+import { pickPrompt, pickTruthOrDare } from './src/prompts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -116,6 +121,8 @@ const SWEEP_INTERVAL_MS = 3000;
 const VOICE_STRIKE_LIMIT = 3;
 const VOICE_BAN_SECONDS = 60 * 60;
 
+const VALID_MOODS = new Set(['chill', 'debate', 'deep', 'vibes', 'learn', 'vent']);
+
 const ICE_SERVERS = buildIceServers();
 
 function buildIceServers() {
@@ -152,6 +159,42 @@ app.get('/api/icebreaker', async (req, res) => {
 });
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
+// Extended admin stats endpoint.
+app.get('/api/admin/stats', async (req, res) => {
+  if (!process.env.MODERATION_TOKEN ||
+      req.get('authorization') !== `Bearer ${process.env.MODERATION_TOKEN}`) {
+    return res.status(404).end();
+  }
+  const s = stats();
+  const recent = await store.recentCalls(200);
+  const reports = await store.recentReports(200);
+
+  // Calls per hour over the last 24h.
+  const hourBuckets = {};
+  const now = Date.now();
+  for (const call of recent) {
+    const age = now - new Date(call.startedAt).getTime();
+    if (age > 24 * 60 * 60 * 1000) continue;
+    const hour = Math.floor(age / (60 * 60 * 1000));
+    hourBuckets[hour] = (hourBuckets[hour] || 0) + 1;
+  }
+
+  // Top countries.
+  const countryCounts = {};
+  for (const peer of peers.values()) {
+    countryCounts[peer.country] = (countryCounts[peer.country] || 0) + 1;
+  }
+
+  res.json({
+    ...s,
+    uptime: process.uptime(),
+    callsPerHour: hourBuckets,
+    topCountries: Object.entries(countryCounts).sort((a, b) => b[1] - a[1]).slice(0, 15),
+    recentReports: reports.length,
+    totalCallsRecorded: recent.length
+  });
+});
 
 function stats() {
   const group = groups.stats();
@@ -197,7 +240,9 @@ io.on('connection', (socket) => {
     language: 'en',
     translateTo: null,
     voiceStrikes: 0,
-    notifyWhenOnline: false
+    notifyWhenOnline: false,
+    mood: null,
+    captionLog: []
   };
   peers.set(socket.id, peer);
 
@@ -244,6 +289,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('find', async (payload = {}) => {
+    if (!limiters.find.allow(socket.id)) return;
     if (!peer.ageConfirmed) {
       socket.emit('error:blocked', { reason: 'age_not_confirmed' });
       return;
@@ -272,6 +318,8 @@ io.on('connection', (socket) => {
     peer.captions = payload.captions === true;
     peer.language = LANGUAGES[payload.language] ? payload.language : 'en';
     peer.translateTo = LANGUAGES[payload.translateTo] ? payload.translateTo : null;
+    peer.mood = VALID_MOODS.has(payload.mood) ? payload.mood : null;
+    peer.captionLog = [];
 
     const partner = matchmaker.enqueue(peer);
     if (!partner) {
@@ -327,6 +375,7 @@ io.on('connection', (socket) => {
    * speaker has switched captions on.
    */
   socket.on('voice:clip', async (payload = {}) => {
+    if (!limiters.voiceClip.allow(socket.id)) return;
     if (!peer.captions || !voiceAvailable()) return;
     const room = rooms.forSocket(socket.id);
     if (!room) return;
@@ -375,6 +424,7 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('caption', { from: 'me', text, at: Date.now() });
+    peer.captionLog.push(text);
 
     if (partner?.captions) {
       const translated = partner.translateTo && partner.translateTo !== peer.language
@@ -742,6 +792,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat', async (payload = {}) => {
+    if (!limiters.chat.allow(socket.id)) return;
     const room = rooms.forSocket(socket.id);
     if (!room) return;
     const partnerId = rooms.partnerOf(socket.id);
@@ -762,9 +813,11 @@ io.on('connection', (socket) => {
     const message = { from: 'them', text, at: Date.now() };
     io.to(partnerId).emit('chat', message);
     socket.emit('chat', { ...message, from: 'me' });
+    if (peer.clientId) store.incrementStat(peer.clientId, 'messagesSent').catch(() => {});
   });
 
   socket.on('image', async (payload = {}) => {
+    if (!limiters.image.allow(socket.id)) return;
     const room = rooms.forSocket(socket.id);
     if (!room) return;
     const partnerId = rooms.partnerOf(socket.id);
@@ -819,6 +872,8 @@ io.on('connection', (socket) => {
       room.game = newTriviaGame(socket.id, partnerId);
     } else if (payload.gameType === 'drawing') {
       room.game = newDrawingGame(socket.id, partnerId);
+    } else if (payload.gameType === 'reflex') {
+      room.game = newReflexGame(socket.id, partnerId);
     } else {
       room.game = newGame(socket.id, partnerId);
       room.game.type = 'tic-tac-toe';
@@ -835,12 +890,161 @@ io.on('connection', (socket) => {
       result = submitPitchScore(room.game, socket.id, Number(payload.difference));
     } else if (room.game.type === 'trivia') {
       result = submitTriviaAnswer(room.game, socket.id, Number(payload.answerIndex));
+    } else if (room.game.type === 'reflex') {
+      result = submitReflexBuzzer(room.game, socket.id, Number(payload.timestamp));
     } else {
       result = applyMove(room.game, socket.id, Number(payload.cell));
     }
 
     if (!result || !result.ok) return;
     emitGame(room);
+  });
+
+  // Real-time Reaction Burst (Hype Particle Cannon)
+  socket.on('reaction', (payload = {}) => {
+    if (!limiters.reaction.allow(socket.id)) return;
+    const emoji = String(payload.emoji || '🔥').slice(0, 8);
+    const groupRoom = groups.roomOf(socket.id);
+    if (groupRoom) {
+      for (const member of groupRoom.members.keys()) {
+        if (member === socket.id) continue;
+        io.to(member).emit('reaction', { emoji, from: peer.name });
+      }
+      return;
+    }
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('reaction', { emoji, from: peer.name });
+    }
+  });
+
+  // ----------------------------------------------- interactive prompts
+
+  /**
+   * Would You Rather / Truth or Dare / Deep Confessions.
+   *
+   * The server picks from a curated deck and sends to both sides, so the prompt
+   * is synchronized and nobody has to think of what to ask.
+   */
+  socket.on('prompt:request', (payload = {}) => {
+    if (!limiters.prompt.allow(socket.id)) return;
+    const room = rooms.forSocket(socket.id);
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!room || !partnerId) return;
+
+    if (!room.usedPrompts) room.usedPrompts = { wyr: new Set(), truth: new Set(), dare: new Set(), deep: new Set() };
+
+    const type = String(payload.type || 'wyr');
+    let result;
+
+    if (type === 'tod') {
+      result = pickTruthOrDare(room.usedPrompts.truth, room.usedPrompts.dare);
+      if (result) room.usedPrompts[result.type].add(result.index);
+    } else {
+      const deckType = ['wyr', 'deep'].includes(type) ? type : 'wyr';
+      result = pickPrompt(deckType, room.usedPrompts[deckType]);
+      if (result) room.usedPrompts[deckType].add(result.index);
+    }
+
+    if (!result) return;
+    const event = { text: result.text, type: result.type, label: result.label || result.type.toUpperCase() };
+    socket.emit('prompt:show', event);
+    io.to(partnerId).emit('prompt:show', event);
+  });
+
+  // ---------------------------------------------------- music jam session
+
+  socket.on('jam:note', (payload = {}) => {
+    if (!limiters.jamNote.allow(socket.id)) return;
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('jam:note', {
+        pad: Number(payload.pad) || 0,
+        velocity: Math.min(1, Math.max(0, Number(payload.velocity) || 0.8))
+      });
+    }
+  });
+
+  // --------------------------------------------- call recording consent
+
+  socket.on('record:request', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('record:request', { name: peer.name });
+  });
+
+  socket.on('record:accept', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('record:accepted');
+    socket.emit('record:accepted');
+  });
+
+  socket.on('record:decline', () => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return;
+    io.to(partnerId).emit('record:declined');
+  });
+
+  // ---------------------------------------------------- post-call rating
+
+  socket.on('rate:call', async (payload = {}) => {
+    const rating = Number(payload.rating);
+    if (!rating || rating < 1 || rating > 5) return;
+    const targetClientId = payload.targetClientId;
+    if (!targetClientId || !peer.clientId) return;
+
+    await store.saveRating({
+      clientId: targetClientId,
+      fromClientId: peer.clientId,
+      rating,
+      roomId: payload.roomId || null
+    });
+
+    // Check for "Crowd Favorite" achievement on the rated person.
+    const avg = await store.averageRating(targetClientId);
+    if (avg && avg.count >= 10 && avg.avg >= 4.5) {
+      await store.saveAchievement(targetClientId, 'crowd_favorite', '⭐ Crowd Favorite');
+    }
+  });
+
+  // ---------------------------------------------- conversation summary
+
+  socket.on('summary:request', async () => {
+    if (!voiceAvailable() || !peer.captionLog.length) {
+      socket.emit('summary:result', { ok: false, error: 'no_data' });
+      return;
+    }
+    const transcript = peer.captionLog.join(' ').slice(0, 5000);
+    try {
+      const { generateIcebreaker } = await import('./src/voice.js');
+      // Reuse the AI text generation for a summary.
+      const prompt = `Summarize this conversation transcript in 2-3 sentences. Be warm and friendly. Transcript: "${transcript}"`;
+      const summary = await generateIcebreaker([], prompt);
+      socket.emit('summary:result', { ok: true, summary });
+    } catch {
+      socket.emit('summary:result', { ok: false, error: 'ai_error' });
+    }
+  });
+
+  // AI Sparks & Conversation Debate Sync
+  socket.on('spark:sync', (payload = {}) => {
+    const partnerId = rooms.partnerOf(socket.id);
+    if (partnerId) {
+      io.to(partnerId).emit('spark:sync', payload);
+    }
+  });
+
+  // Custom User Lounge Creation
+  socket.on('lounges:create', (payload = {}) => {
+    const lounge = groups.createCustomLounge({
+      name: payload.name,
+      desc: payload.desc,
+      icon: payload.icon,
+      tags: payload.tags
+    });
+    io.emit('lounges:list', groups.getLoungeList());
+    socket.emit('lounges:created', lounge);
   });
 
   // Collaborative Drawing Board
@@ -934,6 +1138,10 @@ io.on('connection', (socket) => {
     await store.addFriend(peer.clientId, partner.clientId, partner.name);
     await store.addFriend(partner.clientId, peer.clientId, peer.name);
 
+    // Track for Social Butterfly achievement.
+    store.incrementStat(peer.clientId, 'friendsMade').catch(() => {});
+    store.incrementStat(partner.clientId, 'friendsMade').catch(() => {});
+
     socket.emit('friend:added', { name: partner.name, clientId: partner.clientId });
     io.to(partnerId).emit('friend:added', { name: peer.name, clientId: peer.clientId });
   });
@@ -999,6 +1207,9 @@ io.on('connection', (socket) => {
         reason: 'unavailable'
       });
     }
+    // Clean up rate-limiter state for this socket.
+    for (const limiter of Object.values(limiters)) limiter.remove(socket.id);
+
     if (peer.clientId && online.get(peer.clientId) === socket.id) {
       online.delete(peer.clientId);
     }
@@ -1012,14 +1223,26 @@ io.on('connection', (socket) => {
 function pair(a, b) {
   const room = rooms.create(a, b, a.mode);
   const shared = a.interests.filter((tag) => b.interests.includes(tag));
+  const sharedMood = (a.mood && a.mood === b.mood) ? a.mood : null;
+
+  // Track stats for achievements.
+  if (a.clientId) {
+    store.incrementStat(a.clientId, 'totalCalls').catch(() => {});
+    if (b.country !== 'XX') store.addToSet(a.clientId, 'countries', b.country).catch(() => {});
+  }
+  if (b.clientId) {
+    store.incrementStat(b.clientId, 'totalCalls').catch(() => {});
+    if (a.country !== 'XX') store.addToSet(b.clientId, 'countries', a.country).catch(() => {});
+  }
 
   // Exactly one side must create the WebRTC offer, or both will collide.
   io.to(a.id).emit('matched', {
     roomId: room.id,
     mode: room.mode,
     initiator: true,
-    partner: { name: b.name, country: b.country },
+    partner: { name: b.name, country: b.country, clientId: b.clientId },
     sharedInterests: shared,
+    sharedMood,
     // Lets a either ring b again later without ever learning b's client id.
     callbackToken: issueCallbackToken(b.clientId, b.name)
   });
@@ -1027,8 +1250,9 @@ function pair(a, b) {
     roomId: room.id,
     mode: room.mode,
     initiator: false,
-    partner: { name: a.name, country: a.country },
+    partner: { name: a.name, country: a.country, clientId: a.clientId },
     sharedInterests: shared,
+    sharedMood,
     callbackToken: issueCallbackToken(a.clientId, a.name)
   });
   broadcastStats();
@@ -1166,28 +1390,111 @@ function leaveRoom(socket, reason) {
 
   // Metadata only: who was connected and for how long. Never any content.
   const members = room.members.map((id) => peers.get(id)).filter(Boolean);
+  const durationMs = Date.now() - room.startedAt;
   store.recordCall({
     roomId: room.id,
     mode: room.mode,
     participants: members.map((m) => m.clientId),
     countries: members.map((m) => m.country),
     startedAt: room.startedAt,
-    duration: Date.now() - room.startedAt
+    duration: durationMs
   }).catch((error) => console.warn('Storage: failed to record call —', error.message));
+
+  // Track call duration for achievements.
+  for (const m of members) {
+    if (!m.clientId) continue;
+    store.incrementStat(m.clientId, 'totalMinutes', Math.round(durationMs / 60000)).catch(() => {});
+    checkAchievements(m.clientId).catch(() => {});
+  }
+
+  // Send partner clientId so the client can submit a rating.
+  const partner = partnerId ? peers.get(partnerId) : null;
+  const self = peers.get(socket.id);
+
+  // A pending question clock or reset timer would otherwise outlive the room
+  // it belongs to and fire against nothing.
+  clearGameTimer(room.id);
 
   rooms.destroy(room.id);
   if (partnerId) {
-    io.to(partnerId).emit('partner:left', { reason, duration: Date.now() - room.startedAt });
+    io.to(partnerId).emit('partner:left', {
+      reason, duration: durationMs,
+      partnerClientId: self?.clientId || null,
+      roomId: room.id
+    });
   }
-  socket.emit('room:closed', { reason, duration: Date.now() - room.startedAt });
+  socket.emit('room:closed', {
+    reason, duration: durationMs,
+    partnerClientId: partner?.clientId || null,
+    roomId: room.id
+  });
   broadcastStats();
 }
 
+/**
+ * Server-side clocks for the activity games.
+ *
+ * Two things stall a game otherwise: a trivia question waits for both players
+ * forever, and a finished game sits frozen on screen with no way back to the
+ * picker. Both are driven from here so the server stays the single authority
+ * on what round it is — clients only render what they are told.
+ *
+ * @type {Map<string, NodeJS.Timeout>} roomId -> pending timer
+ */
+const gameTimers = new Map();
+
+/** How long a finished game stays on screen before returning to the picker. */
+const GAME_RESET_MS = 6000;
+
+function clearGameTimer(roomId) {
+  const timer = gameTimers.get(roomId);
+  if (timer) clearTimeout(timer);
+  gameTimers.delete(roomId);
+}
+
+/**
+ * Re-arms whatever clock the current game state needs.
+ *
+ * Called from emitGame, which every state change already passes through, so a
+ * round can never advance without its timer being rebuilt to match.
+ */
+function scheduleGameTimers(room) {
+  clearGameTimer(room.id);
+  if (!room.game) return;
+
+  if (room.game.finished) {
+    gameTimers.set(room.id, setTimeout(() => {
+      gameTimers.delete(room.id);
+      const live = rooms.get(room.id);
+      if (!live || !live.game) return;
+      live.game = null;
+      for (const memberId of live.members) io.to(memberId).emit('game:closed');
+    }, GAME_RESET_MS));
+    return;
+  }
+
+  if (room.game.type === 'trivia' && room.game.deadline) {
+    const delay = Math.max(250, room.game.deadline - Date.now());
+    gameTimers.set(room.id, setTimeout(() => {
+      gameTimers.delete(room.id);
+      const live = rooms.get(room.id);
+      if (!live?.game) return;
+      // emitGame below re-arms the clock for whatever round comes next.
+      if (expireTriviaQuestion(live.game).ok) emitGame(live);
+    }, delay));
+  }
+}
+
 function emitGame(room) {
+  scheduleGameTimers(room);
+
   for (const memberId of room.members) {
     const isDrawer = room.game.drawer === memberId;
     io.to(memberId).emit('game:state', {
       type: room.game.type || 'tic-tac-toe',
+      // Absolute deadline so every client counts down to the same instant.
+      deadline: room.game.deadline || null,
+      resetInMs: room.game.finished ? GAME_RESET_MS : null,
       // Tic-tac-toe
       board: room.game.board,
       yourMark: room.game.marks ? room.game.marks[memberId] : null,
@@ -1214,6 +1521,31 @@ async function recordReport(entry) {
     await store.saveReport(entry);
   } catch (error) {
     console.warn('Storage: failed to save report —', error.message);
+  }
+}
+
+/**
+ * Check and award achievements based on current stats.
+ *
+ * Fire-and-forget — achievement checks never block or fail the call flow.
+ */
+async function checkAchievements(clientId) {
+  if (!clientId) return;
+  const s = await store.getStats(clientId);
+  const CHECKS = [
+    { stat: 'totalCalls', threshold: 1,  type: 'first_call',      name: '🎤 First Words' },
+    { stat: 'totalCalls', threshold: 50, type: 'veteran',          name: '🏅 Veteran' },
+    { stat: 'totalMinutes', threshold: 300, type: 'marathon',      name: '⏱️ Marathon Talker' },
+    { stat: 'countries',   isSet: true, threshold: 10, type: 'world_traveler', name: '🌍 World Traveler' },
+    { stat: 'gamesPlayed', threshold: 20, type: 'game_master',     name: '🎮 Game Master' },
+    { stat: 'messagesSent', threshold: 100, type: 'chatterbox',    name: '💬 Chatterbox' },
+    { stat: 'friendsMade', threshold: 5, type: 'social_butterfly', name: '👥 Social Butterfly' }
+  ];
+  for (const check of CHECKS) {
+    const val = check.isSet ? (Array.isArray(s[check.stat]) ? s[check.stat].length : 0) : (s[check.stat] || 0);
+    if (val >= check.threshold) {
+      await store.saveAchievement(clientId, check.type, check.name);
+    }
   }
 }
 

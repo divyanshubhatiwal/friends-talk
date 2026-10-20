@@ -63,6 +63,19 @@ const INDEXES = {
     // The push service treats the endpoint as the subscription's identity.
     { key: { endpoint: 1 }, unique: true, name: 'endpoint_unique' },
     { key: { clientId: 1 }, name: 'by_client' }
+  ],
+  ratings: [
+    { key: { clientId: 1 }, name: 'by_client' },
+    { key: { fromClientId: 1, roomId: 1 }, name: 'by_rater_room' },
+    // 3 months.
+    { key: { expiresAt: 1 }, expireAfterSeconds: 0, name: 'ttl' }
+  ],
+  achievements: [
+    { key: { clientId: 1 }, name: 'by_client' },
+    { key: { clientId: 1, type: 1 }, unique: true, name: 'client_type_unique' }
+  ],
+  userStats: [
+    { key: { clientId: 1 }, unique: true, name: 'client_unique' }
   ]
 };
 
@@ -70,7 +83,8 @@ export const RETENTION = {
   friendship: 90 * DAY,
   friendMessage: 14 * DAY,
   call: 30 * DAY,
-  report: 30 * DAY
+  report: 30 * DAY,
+  rating: 90 * DAY
 };
 
 let client = null;

@@ -158,7 +158,8 @@
     pitchLockBtn: $('pitch-lock-btn'), pitchPMStatus: $('game-pm-status'),
 
     // Trivia Battle UI
-    triviaQNum: $('trivia-q-num'), triviaScoreMe: $('trivia-score-me'), triviaScoreThem: $('trivia-score-them'),
+    triviaQNum: $('trivia-q-num'), triviaTimer: $('trivia-timer'),
+    triviaScoreMe: $('trivia-score-me'), triviaScoreThem: $('trivia-score-them'),
     triviaQuestion: $('trivia-question'), triviaOptions: $('trivia-options'), triviaStatus: $('trivia-status'),
 
     // Drawing Board UI
@@ -170,8 +171,34 @@
     watchUrlInput: $('watch-url-input'), watchLoadBtn: $('watch-load-btn'), watchPlayer: $('watch-player'),
     soundscapeBtn: $('btn-soundscape'), soundscapeMenu: $('soundscape-menu'), soundscapeVolume: $('soundscape-volume'),
 
-    // Lounges UI
-    loungesList: $('lounges-list')
+    // Lounges UI & Custom Creator
+    loungesList: $('lounges-list'),
+    btnCreateLounge: $('btn-create-lounge'),
+    createLoungeModal: $('create-lounge-modal'),
+    loungeNameInput: $('lounge-name-input'),
+    loungeDescInput: $('lounge-desc-input'),
+    loungeIconInput: $('lounge-icon-input'),
+    loungeCancelBtn: $('lounge-cancel-btn'),
+    loungeSubmitBtn: $('lounge-submit-btn'),
+
+    // Reaction Sparks & AI Matrix
+    reactionDock: $('reaction-dock'),
+    particlesHost: $('particles-host'),
+    sparkCategories: $('spark-categories'),
+    debateTimerWrap: $('debate-timer-wrap'),
+    debateTimerClock: $('debate-timer-clock'),
+    debateTimerBtn: $('debate-timer-btn'),
+
+    // Reflex Clash Game
+    gameSelectReflex: $('game-select-reflex'),
+    gameReflexPane: $('game-reflex-pane'),
+    reflexRoundBadge: $('reflex-round-badge'),
+    reflexScoreMe: $('reflex-score-me'),
+    reflexScoreThem: $('reflex-score-them'),
+    reflexStatus: $('reflex-status'),
+    reflexBuzzerBtn: $('reflex-buzzer-btn'),
+    reflexBuzzerText: $('reflex-buzzer-text'),
+    reflexLatency: $('reflex-latency')
   };
 
   // The mode picker is a segmented control rather than a <select>, because a
@@ -653,6 +680,97 @@
 
       lfo.start();
       activeModifierNodes.push(ringMod, lfo, lfoGain, delay, feedback);
+
+    } else if (currentFilter === 'spatial-orbit') {
+      // 3D Spatial Audio Orbit: Binaural stereo panner with LFO
+      if (audioCtx.createStereoPanner) {
+        const panner = audioCtx.createStereoPanner();
+        const lfo = audioCtx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.35; // One orbit every ~3 seconds
+
+        lfo.connect(panner.pan);
+        rawSource.connect(panner);
+        panner.connect(effectsOutput);
+        lfo.start();
+        activeModifierNodes.push(panner, lfo);
+      } else {
+        rawSource.connect(effectsOutput);
+      }
+
+    } else if (currentFilter === 'radio') {
+      // Walkie-Talkie Radio: Bandpass filter + slight overdrive
+      const hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 500;
+
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2800;
+
+      const shaper = audioCtx.createWaveShaper();
+      const curve = new Float32Array(256);
+      for (let i = 0; i < 256; i++) {
+        const x = (i * 2) / 256 - 1;
+        curve[i] = ((Math.PI + 3) * x) / (Math.PI + 3 * Math.abs(x));
+      }
+      shaper.curve = curve;
+
+      rawSource.connect(hp);
+      hp.connect(lp);
+      lp.connect(shaper);
+      shaper.connect(effectsOutput);
+      activeModifierNodes.push(hp, lp, shaper);
+
+    } else if (currentFilter === 'reverb') {
+      // Cyber Stadium Reverb: Multi-tap delay network
+      const dryGain = audioCtx.createGain();
+      const wetGain = audioCtx.createGain();
+      dryGain.gain.value = 0.7;
+      wetGain.gain.value = 0.5;
+
+      const delay1 = audioCtx.createDelay();
+      delay1.delayTime.value = 0.08;
+      const delay2 = audioCtx.createDelay();
+      delay2.delayTime.value = 0.16;
+      const feedback = audioCtx.createGain();
+      feedback.gain.value = 0.4;
+
+      rawSource.connect(dryGain);
+      dryGain.connect(effectsOutput);
+
+      rawSource.connect(delay1);
+      delay1.connect(delay2);
+      delay2.connect(feedback);
+      feedback.connect(delay1);
+      delay2.connect(wetGain);
+      wetGain.connect(effectsOutput);
+
+      activeModifierNodes.push(dryGain, wetGain, delay1, delay2, feedback);
+
+    } else if (currentFilter === 'vinyl') {
+      // Vintage Lo-Fi Vinyl: Warm lowpass + subtle pitch flutter
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2200;
+
+      const delay = audioCtx.createDelay();
+      delay.delayTime.value = 0.02;
+
+      const lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 1.2;
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.0008;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(delay.delayTime);
+
+      rawSource.connect(lp);
+      lp.connect(delay);
+      delay.connect(effectsOutput);
+      lfo.start();
+
+      activeModifierNodes.push(lp, delay, lfo, lfoGain);
 
     } else {
       rawSource.connect(effectsOutput);
@@ -1156,32 +1274,87 @@
     for (const bar of el.viz.querySelectorAll('i')) bar.style.transform = 'scaleY(0.08)';
   }
 
-  // ------------------------------------------------------------- icebreaker & pitch match
-
+  // ------------------------------------------------------------- AI Sparks Matrix
   let activeIcebreakers = [];
   let currentIcebreakerIndex = 0;
+  let currentSparkCategory = 'all';
   let currentPitchHz = 0;
   let pitchTrackInterval = null;
+  let debateTimerInterval = null;
+  let debateSecondsLeft = 60;
 
-  const DEFAULT_ICEBREAKERS = [
-    "If you could have dinner with any historical figure, who would it be?",
-    "What is the most interesting book or movie you've read/watched recently?",
-    "Would you rather travel 100 years into the past or 100 years into the future?",
-    "What's your absolute favorite way to spend a weekend?",
-    "If you could immediately speak any language fluently, which would you pick?",
-    "What is the most spontaneous thing you've ever done?",
-    "What topic could you give a 20-minute presentation on with zero preparation?",
-    "Do you prefer listening to music, podcasts, or audiobooks while walking?",
-    "What's the best piece of advice you've ever received?",
-    "What's a hobby you've always wanted to try but haven't yet?"
-  ];
+  const SPARKS_CATALOG = {
+    all: [
+      "If you could have dinner with any historical figure, who would it be?",
+      "What is a popular trend or opinion that you completely disagree with?",
+      "Would you rather live 100 years into the past or 100 years into the future?",
+      "What's something you could give a 30-minute spontaneous talk on with zero prep?",
+      "If teleportation was invented tomorrow, where would you go first?",
+      "What's your most memorable travel story or unexpected adventure?",
+      "What's a skill you picked up during lockdown that you still use today?",
+      "If you could master any musical instrument overnight, which one?",
+      "What's the best piece of advice you've ever been given?",
+      "If you had to eat one cuisine for the rest of your life, which would it be?",
+      "What's a movie you can rewatch endlessly without getting bored?",
+      "If you could witness any event in history firsthand, what would it be?"
+    ],
+    deep: [
+      "What truth do you believe that very few people agree with you on?",
+      "What is the most defining lesson life has taught you in the last two years?",
+      "If you knew you only had one year left, what would you immediately change?",
+      "Do you think AI will ultimately unite humanity or divide it further?",
+      "What gives you a genuine sense of peace when the world feels chaotic?",
+      "What's something you used to be certain about but completely changed your mind on?",
+      "Do you think free will is real, or are we just following a script we can't see?",
+      "If you could solve one global problem overnight, which would you choose and why?",
+      "What does 'living a meaningful life' actually mean to you?",
+      "Do you think humans are fundamentally cooperative or competitive by nature?"
+    ],
+    wyr: [
+      "⚡ Would You Rather: Have the ability to fly or become completely invisible?",
+      "⚡ Would You Rather: Explore the deepest unexplored ocean or colonize Mars?",
+      "⚡ Would You Rather: Always say everything on your mind or never speak again?",
+      "⚡ Would You Rather: Have unlimited money but no free time, or unlimited free time on a tight budget?",
+      "⚡ Would You Rather: Win an Olympic Gold medal or an Academy Award?",
+      "⚡ Would You Rather: Know every language fluently or play every instrument perfectly?",
+      "⚡ Would You Rather: Live in a world with no internet or no air conditioning?",
+      "⚡ Would You Rather: Be able to talk to animals or speak every human language?",
+      "⚡ Would You Rather: Always be 10 minutes late or always be 20 minutes early?",
+      "⚡ Would You Rather: Have a rewind button for your life or a pause button?"
+    ],
+    debate: [
+      "🔥 60s Debate: Pineapples on pizza is an abomination vs a culinary masterpiece.",
+      "🔥 60s Debate: Remote work is strictly better than in-office culture.",
+      "🔥 60s Debate: Books are always inherently superior to their movie adaptations.",
+      "🔥 60s Debate: Social media has done more harm than good for society.",
+      "🔥 60s Debate: Video games are an art form equal to classical cinema and literature.",
+      "🔥 60s Debate: Everyone should learn to code, even non-tech professionals.",
+      "🔥 60s Debate: Cryptocurrency will eventually replace traditional banking.",
+      "🔥 60s Debate: AI-generated art should be considered real art.",
+      "🔥 60s Debate: Universities are becoming less relevant in the age of the internet.",
+      "🔥 60s Debate: Morning people are more productive than night owls."
+    ],
+    takes: [
+      "🎭 Hot Take: Cereal is technically a cold soup.",
+      "🎭 Hot Take: Most movies would be 100x better if they were 90 minutes or less.",
+      "🎭 Hot Take: Mondays aren't bad; your routine is bad.",
+      "🎭 Hot Take: Voice notes are vastly superior to long text paragraphs.",
+      "🎭 Hot Take: Nostalgia makes older music and games seem much better than they actually were.",
+      "🎭 Hot Take: Dark mode is objectively superior to light mode.",
+      "🎭 Hot Take: Dogs are overrated and cats are underrated.",
+      "🎭 Hot Take: The best travel experiences are solo trips, not group vacations.",
+      "🎭 Hot Take: Breakfast for dinner is better than actual dinner.",
+      "🎭 Hot Take: Audiobooks count as reading. Full stop."
+    ]
+  };
 
   async function loadIcebreakers(interests) {
     el.icebreakerWrap.hidden = false;
-    el.icebreakerText.textContent = "Asking AI for matching topics...";
+    el.icebreakerText.textContent = "Generating conversation sparks…";
     currentIcebreakerIndex = 0;
     activeIcebreakers = [];
 
+    // Try the AI-powered endpoint first — it generates interest-tailored prompts
     try {
       const query = interests && interests.length ? `?interests=${encodeURIComponent(interests.join(','))}` : '';
       const res = await fetch(`/api/icebreaker${query}`);
@@ -1193,21 +1366,155 @@
           .filter(Boolean);
       }
     } catch (e) {
-      console.warn("Icebreaker API failed, falling back to local pool", e.message);
+      console.warn("Icebreaker API unavailable, using local spark catalog", e.message);
     }
 
-    if (!activeIcebreakers || activeIcebreakers.length === 0) {
-      activeIcebreakers = [...DEFAULT_ICEBREAKERS]
-        .sort(() => 0.5 - Math.random())
-        .slice(0, 3);
+    // Fall back to the local curated catalog if the API returned nothing
+    if (!activeIcebreakers.length) {
+      activeIcebreakers = [...(SPARKS_CATALOG[currentSparkCategory] || SPARKS_CATALOG.all)]
+        .sort(() => 0.5 - Math.random());
     }
     showCurrentIcebreaker();
   }
 
-  function showCurrentIcebreaker() {
-    if (!activeIcebreakers.length) return;
-    el.icebreakerText.textContent = activeIcebreakers[currentIcebreakerIndex];
+  function showCurrentIcebreaker(isRemote = false) {
+    if (!activeIcebreakers.length) {
+      activeIcebreakers = [...(SPARKS_CATALOG[currentSparkCategory] || SPARKS_CATALOG.all)];
+    }
+    const prompt = activeIcebreakers[currentIcebreakerIndex % activeIcebreakers.length];
+    el.icebreakerText.textContent = prompt;
+
+    const isDebate = currentSparkCategory === 'debate' || prompt.includes('Debate:');
+    el.debateTimerWrap.hidden = !isDebate;
+
+    if (!isRemote) {
+      socket.emit('spark:sync', {
+        category: currentSparkCategory,
+        promptIndex: currentIcebreakerIndex,
+        prompt
+      });
+    }
   }
+
+  // AI Sparks category chips
+  for (const catBtn of document.querySelectorAll('.spark-cat')) {
+    catBtn.addEventListener('click', () => {
+      for (const b of document.querySelectorAll('.spark-cat')) b.classList.remove('is-active');
+      catBtn.classList.add('is-active');
+      currentSparkCategory = catBtn.dataset.cat || 'all';
+      activeIcebreakers = [...(SPARKS_CATALOG[currentSparkCategory] || SPARKS_CATALOG.all)].sort(() => 0.5 - Math.random());
+      currentIcebreakerIndex = 0;
+      showCurrentIcebreaker();
+    });
+  }
+
+  // 60-Second Debate Timer
+  el.debateTimerBtn?.addEventListener('click', () => {
+    startDebateCountdown();
+    socket.emit('spark:sync', { action: 'start_timer' });
+  });
+
+  function startDebateCountdown() {
+    clearInterval(debateTimerInterval);
+    debateSecondsLeft = 60;
+    el.debateTimerClock.textContent = `⏱️ ${debateSecondsLeft}s`;
+    el.debateTimerBtn.disabled = true;
+
+    debateTimerInterval = setInterval(() => {
+      debateSecondsLeft--;
+      el.debateTimerClock.textContent = `⏱️ ${debateSecondsLeft}s`;
+      if (debateSecondsLeft <= 0) {
+        clearInterval(debateTimerInterval);
+        el.debateTimerClock.textContent = `🔔 Time's Up!`;
+        el.debateTimerBtn.disabled = false;
+        triggerSynthesizedSound('rimshot');
+        toast('🔔 60s Debate round finished!');
+      }
+    }, 1000);
+  }
+
+  socket.on('spark:sync', (payload) => {
+    if (payload.action === 'start_timer') {
+      startDebateCountdown();
+      toast('⏱️ Partner started the 60s debate timer!');
+      return;
+    }
+    if (payload.category) {
+      currentSparkCategory = payload.category;
+      for (const b of document.querySelectorAll('.spark-cat')) {
+        b.classList.toggle('is-active', b.dataset.cat === payload.category);
+      }
+    }
+    if (payload.prompt) {
+      el.icebreakerWrap.hidden = false;
+      el.icebreakerText.textContent = payload.prompt;
+      const isDebate = payload.prompt.includes('Debate:');
+      el.debateTimerWrap.hidden = !isDebate;
+    }
+  });
+
+  // ------------------------------------------------------------- Real-time Reaction Particles
+  function triggerReactionBurst(emoji = '🔥', isRemote = false) {
+    if (!el.particlesHost) return;
+
+    // Trigger subtle synthesizer audio blip
+    if (audioCtx) {
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(isRemote ? 520 : 680, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(isRemote ? 780 : 960, audioCtx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {}
+    }
+
+    const count = 14;
+    const startX = isRemote ? window.innerWidth * 0.35 : window.innerWidth * 0.65;
+    const startY = window.innerHeight * 0.65;
+
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('div');
+      p.className = 'reaction-particle';
+      p.textContent = emoji;
+      p.style.left = startX + (Math.random() * 60 - 30) + 'px';
+      p.style.top = startY + (Math.random() * 40 - 20) + 'px';
+      p.style.fontSize = (24 + Math.random() * 18) + 'px';
+
+      const dx = (Math.random() * 260 - 130) + 'px';
+      const dyMid = (-80 - Math.random() * 120) + 'px';
+      const dyEnd = (-200 - Math.random() * 250) + 'px';
+      const rotMid = (Math.random() * 60 - 30) + 'deg';
+      const rotEnd = (Math.random() * 180 - 90) + 'deg';
+
+      p.style.setProperty('--dx', dx);
+      p.style.setProperty('--dy-mid', dyMid);
+      p.style.setProperty('--dy-end', dyEnd);
+      p.style.setProperty('--rot-mid', rotMid);
+      p.style.setProperty('--rot-end', rotEnd);
+      p.style.animationDelay = (Math.random() * 0.15) + 's';
+
+      el.particlesHost.appendChild(p);
+      setTimeout(() => p.remove(), 2000);
+    }
+  }
+
+  for (const rBtn of document.querySelectorAll('.react-btn')) {
+    rBtn.addEventListener('click', () => {
+      const emoji = rBtn.dataset.emoji || '🔥';
+      triggerReactionBurst(emoji, false);
+      socket.emit('reaction', { emoji });
+    });
+  }
+
+  socket.on('reaction', ({ emoji, from }) => {
+    triggerReactionBurst(emoji || '🔥', true);
+  });
 
   function startPitchMatchTracking() {
     if (pitchTrackInterval) clearInterval(pitchTrackInterval);
@@ -2293,6 +2600,7 @@
     el.chatInput.disabled = !live;
     el.send.disabled = !live;
     el.image.disabled = !live;
+    if (el.reactionDock) el.reactionDock.hidden = !live;
 
     if (state.phase === 'idle') setStatus('Press call to meet someone new.');
   }
@@ -2788,6 +3096,38 @@
 
   socket.on('draw:clear', clearCanvas);
 
+  /**
+   * Counts down the current trivia question.
+   *
+   * Driven from the absolute deadline the server sends rather than a local
+   * duration, so both players see the same number and a slow network cannot
+   * put them out of step. The server is still what actually ends the round;
+   * this only shows it coming.
+   */
+  let triviaCountdownTimer = null;
+
+  function stopTriviaCountdown() {
+    if (triviaCountdownTimer) clearInterval(triviaCountdownTimer);
+    triviaCountdownTimer = null;
+    if (el.triviaTimer) el.triviaTimer.hidden = true;
+  }
+
+  function startTriviaCountdown(deadline) {
+    stopTriviaCountdown();
+    if (!deadline || !el.triviaTimer) return;
+
+    const paint = () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      el.triviaTimer.hidden = false;
+      el.triviaTimer.textContent = left + 's';
+      el.triviaTimer.classList.toggle('is-urgent', left <= 5);
+      if (left <= 0) stopTriviaCountdown();
+    };
+
+    paint();
+    triviaCountdownTimer = setInterval(paint, 250);
+  }
+
   function renderBoard(payload) {
     el.gameWrap.hidden = false;
     el.gameSelectPane.hidden = true;
@@ -2795,8 +3135,66 @@
     el.gamePMPane.hidden = true;
     el.gameTriviaPane.hidden = true;
     el.gameDrawPane.hidden = true;
+    if (el.gameReflexPane) el.gameReflexPane.hidden = true;
 
-    if (payload.type === 'pitch-match') {
+    // Switching away from trivia must kill its clock, or it keeps ticking
+    // against a panel nobody is looking at.
+    if (payload.type !== 'trivia') stopTriviaCountdown();
+
+    if (payload.type === 'reflex') {
+      el.gameReflexPane.hidden = false;
+      const partnerId = Object.keys(payload.scores || {}).find((id) => id !== socket.id);
+      el.reflexRoundBadge.textContent = `Round ${payload.round || 1} / ${payload.maxRounds || 3}`;
+      el.reflexScoreMe.textContent = payload.scores?.[socket.id] || 0;
+      el.reflexScoreThem.textContent = payload.scores?.[partnerId] || 0;
+
+      const buzzer = el.reflexBuzzerBtn;
+      const btnText = el.reflexBuzzerText;
+
+      buzzer.classList.remove('is-active', 'is-waiting', 'is-false-start');
+
+      if (payload.finished) {
+        buzzer.disabled = true;
+        btnText.textContent = payload.winner === socket.id ? "🏆 YOU WON!" : "THEY WON!";
+        el.reflexStatus.textContent = payload.winner === socket.id ? "🎉 Reflex Champion!" : "Better reflexes next time!";
+        el.reflexLatency.textContent = "Game Complete!";
+      } else {
+        buzzer.disabled = false;
+        const now = Date.now();
+        const timeUntilTrigger = (payload.triggerAt || now) - now;
+
+        if (timeUntilTrigger > 0) {
+          buzzer.classList.add('is-waiting');
+          btnText.textContent = "READY...";
+          el.reflexStatus.textContent = "Wait for buzzer to turn green — do NOT tap early!";
+          
+          if (window._reflexTimer) clearTimeout(window._reflexTimer);
+          window._reflexTimer = setTimeout(() => {
+            if (el.gameReflexPane && !el.gameReflexPane.hidden) {
+              buzzer.classList.remove('is-waiting');
+              buzzer.classList.add('is-active');
+              btnText.textContent = "🟢 TAP NOW!";
+              el.reflexStatus.textContent = "⚡ TAP AS FAST AS YOU CAN!";
+            }
+          }, timeUntilTrigger);
+        } else {
+          buzzer.classList.add('is-active');
+          btnText.textContent = "🟢 TAP NOW!";
+          el.reflexStatus.textContent = "⚡ TAP AS FAST AS YOU CAN!";
+        }
+
+        if (payload.roundWinner) {
+          const wonRound = payload.roundWinner === socket.id;
+          const myTap = payload.tapped?.[socket.id];
+          if (myTap === -1) {
+            buzzer.classList.add('is-false-start');
+            el.reflexLatency.textContent = "⚠️ False start! Tapped too early.";
+          } else if (myTap > 0) {
+            el.reflexLatency.textContent = wonRound ? `⚡ Fast reaction: ${myTap}ms!` : `Partner was faster!`;
+          }
+        }
+      }
+    } else if (payload.type === 'pitch-match') {
       el.gamePMPane.hidden = false;
       targetPitch = payload.targetPitch;
       el.pitchTargetHz.textContent = `Target: ${targetPitch} Hz`;
@@ -2831,12 +3229,15 @@
       el.triviaScoreThem.textContent = payload.scores?.[partnerId] || 0;
 
       if (payload.finished) {
+        stopTriviaCountdown();
         el.triviaQuestion.textContent = "Trivia Battle Finished!";
         el.triviaOptions.innerHTML = '';
         el.triviaStatus.textContent = payload.winner === 'draw'
           ? "It's a tie!"
           : (payload.winner === socket.id ? "🎉 You Won the Trivia Battle!" : "They Won the Trivia Battle!");
       } else if (currentQ) {
+        // Re-armed on every round, so it follows the server's clock exactly.
+        startTriviaCountdown(payload.deadline);
         el.triviaQuestion.textContent = currentQ.q;
         el.triviaOptions.innerHTML = '';
         const myAnswer = payload.answers?.[socket.id];
@@ -2897,17 +3298,31 @@
     }
   }
 
+  /** Returns the panel to the game picker, hiding whichever game was open. */
+  function showGamePicker() {
+    el.gameWrap.hidden = false;
+    el.gameSelectPane.hidden = false;
+    el.gameTTTPane.hidden = true;
+    el.gamePMPane.hidden = true;
+    el.gameTriviaPane.hidden = true;
+    el.gameDrawPane.hidden = true;
+    if (el.gameReflexPane) el.gameReflexPane.hidden = true;
+    stopTriviaCountdown();
+  }
+
   el.game.addEventListener('click', () => {
-    if (el.gameWrap.hidden) {
-      el.gameWrap.hidden = false;
-      el.gameSelectPane.hidden = false;
-      el.gameTTTPane.hidden = true;
-      el.gamePMPane.hidden = true;
-      el.gameTriviaPane.hidden = true;
-      el.gameDrawPane.hidden = true;
-    } else {
-      el.gameWrap.hidden = true;
-    }
+    if (el.gameWrap.hidden) showGamePicker();
+    else el.gameWrap.hidden = true;
+  });
+
+  /*
+   * The server clears a finished game after a few seconds and says so. Without
+   * this the final scoreboard simply stayed on screen forever, with no way
+   * back to pick another game.
+   */
+  socket.on('game:closed', () => {
+    showGamePicker();
+    toast('Game over — pick another');
   });
 
   el.gameSelectTTT.addEventListener('click', () => {
@@ -2928,6 +3343,15 @@
   el.gameSelectDraw.addEventListener('click', () => {
     socket.emit('game:start', { gameType: 'drawing' });
     el.gameSelectPane.hidden = true;
+  });
+
+  el.gameSelectReflex?.addEventListener('click', () => {
+    socket.emit('game:start', { gameType: 'reflex' });
+    el.gameSelectPane.hidden = true;
+  });
+
+  el.reflexBuzzerBtn?.addEventListener('click', () => {
+    socket.emit('game:move', { timestamp: Date.now() });
   });
 
   el.pitchLockBtn.addEventListener('click', () => {
@@ -2955,9 +3379,20 @@
         </div>
         <div class="lounge-card-bottom">
           <span class="lounge-meta">🟢 ${lounge.membersCount} / ${lounge.capacity} online</span>
-          <button class="btn btn-gradient btn-sm lounge-join-btn">Join Lounge</button>
+          <div style="display:flex; gap: 6px;">
+            <button class="btn btn-ghost btn-sm lounge-share-btn" title="Copy Invite Link">🔗</button>
+            <button class="btn btn-gradient btn-sm lounge-join-btn">Join</button>
+          </div>
         </div>
       `;
+
+      card.querySelector('.lounge-share-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = `${location.origin}/app?lounge=${lounge.id}`;
+        navigator.clipboard?.writeText(url).then(() => {
+          toast('📋 Direct lounge invite link copied to clipboard!', 'ok');
+        }).catch(() => toast(url));
+      });
 
       card.querySelector('.lounge-join-btn').addEventListener('click', async () => {
         try {
@@ -2977,6 +3412,32 @@
       el.loungesList.appendChild(card);
     });
   }
+
+  // Custom Lounge Modal Form
+  el.btnCreateLounge?.addEventListener('click', () => {
+    el.createLoungeModal.showModal();
+  });
+  el.loungeCancelBtn?.addEventListener('click', () => {
+    el.createLoungeModal.close();
+  });
+  el.loungeSubmitBtn?.addEventListener('click', () => {
+    const name = el.loungeNameInput.value.trim();
+    const desc = el.loungeDescInput.value.trim();
+    const icon = el.loungeIconInput.value.trim() || '✨';
+    if (!name) {
+      toast('Please enter a lounge title', 'err');
+      return;
+    }
+    socket.emit('lounges:create', { name, desc, icon, tags: ['custom'] });
+    el.createLoungeModal.close();
+    el.loungeNameInput.value = '';
+    el.loungeDescInput.value = '';
+    toast('Custom lounge launched!', 'ok');
+  });
+
+  socket.on('lounges:created', (lounge) => {
+    toast(`Lounge "${lounge.name}" created!`, 'ok');
+  });
 
   socket.on('lounges:list', (list) => renderLounges(list));
 

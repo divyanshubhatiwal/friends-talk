@@ -135,57 +135,57 @@ export function submitPitchScore(game, playerId, difference) {
 
 // Trivia Question Bank for in-call trivia battle
 const TRIVIA_BANK = [
-  {
-    q: "What is the fastest land animal in the world?",
-    options: ["Cheetah", "Pronghorn", "Lion", "Peregrine Falcon"],
-    answer: 0
-  },
-  {
-    q: "Which planet in our solar system has the most moons?",
-    options: ["Saturn", "Jupiter", "Neptune", "Uranus"],
-    answer: 0
-  },
-  {
-    q: "In what year was the World Wide Web created?",
-    options: ["1989", "1995", "1983", "1991"],
-    answer: 0
-  },
-  {
-    q: "Which element has the chemical symbol 'Au'?",
-    options: ["Silver", "Gold", "Argon", "Aluminum"],
-    answer: 1
-  },
-  {
-    q: "What is the national animal of Scotland?",
-    options: ["Red Deer", "Unicorn", "Golden Eagle", "Highland Cow"],
-    answer: 1
-  },
-  {
-    q: "Who directed the movie 'Interstellar'?",
-    options: ["Denis Villeneuve", "Christopher Nolan", "James Cameron", "Ridley Scott"],
-    answer: 1
-  },
-  {
-    q: "What is the capital city of Australia?",
-    options: ["Sydney", "Melbourne", "Canberra", "Brisbane"],
-    answer: 2
-  },
-  {
-    q: "How many bits are in one byte?",
-    options: ["4", "16", "8", "32"],
-    answer: 2
-  },
-  {
-    q: "Which video game franchise features the character 'Master Chief'?",
-    options: ["Gears of War", "Destiny", "Halo", "Doom"],
-    answer: 2
-  },
-  {
-    q: "What is the hardest natural substance on Earth?",
-    options: ["Quartz", "Graphene", "Diamond", "Titanium"],
-    answer: 2
-  }
+  // Science & Nature
+  { q: "What is the fastest land animal in the world?", options: ["Cheetah", "Pronghorn", "Lion", "Peregrine Falcon"], answer: 0 },
+  { q: "Which planet in our solar system has the most moons?", options: ["Saturn", "Jupiter", "Neptune", "Uranus"], answer: 0 },
+  { q: "Which element has the chemical symbol 'Au'?", options: ["Silver", "Gold", "Argon", "Aluminum"], answer: 1 },
+  { q: "What is the hardest natural substance on Earth?", options: ["Quartz", "Graphene", "Diamond", "Titanium"], answer: 2 },
+  { q: "How many bones are in the adult human body?", options: ["186", "206", "216", "196"], answer: 1 },
+  { q: "Which gas makes up about 78% of Earth's atmosphere?", options: ["Oxygen", "Carbon dioxide", "Nitrogen", "Helium"], answer: 2 },
+  { q: "What is the largest organ in the human body?", options: ["Liver", "Brain", "Skin", "Lungs"], answer: 2 },
+  { q: "What temperature (°C) does water boil at sea level?", options: ["90", "100", "110", "95"], answer: 1 },
+
+  // Geography & World
+  { q: "What is the capital city of Australia?", options: ["Sydney", "Melbourne", "Canberra", "Brisbane"], answer: 2 },
+  { q: "Which country has the longest coastline in the world?", options: ["Russia", "Australia", "Canada", "Indonesia"], answer: 2 },
+  { q: "What is the smallest country in the world by area?", options: ["Monaco", "Vatican City", "San Marino", "Liechtenstein"], answer: 1 },
+  { q: "Which river is the longest in the world?", options: ["Amazon", "Mississippi", "Yangtze", "Nile"], answer: 3 },
+  { q: "What is the national animal of Scotland?", options: ["Red Deer", "Unicorn", "Golden Eagle", "Highland Cow"], answer: 1 },
+
+  // Tech & Internet
+  { q: "In what year was the World Wide Web created?", options: ["1989", "1995", "1983", "1991"], answer: 0 },
+  { q: "How many bits are in one byte?", options: ["4", "16", "8", "32"], answer: 2 },
+  { q: "What does 'HTTP' stand for?", options: ["HyperText Transfer Protocol", "High Transfer Text Protocol", "HyperText Transmission Port", "Home Text Transfer Protocol"], answer: 0 },
+  { q: "Who co-founded Apple alongside Steve Jobs?", options: ["Bill Gates", "Steve Wozniak", "Tim Cook", "Larry Page"], answer: 1 },
+  { q: "What programming language was created by Brendan Eich in 10 days?", options: ["Java", "Python", "JavaScript", "TypeScript"], answer: 2 },
+
+  // Pop Culture & Entertainment
+  { q: "Who directed the movie 'Interstellar'?", options: ["Denis Villeneuve", "Christopher Nolan", "James Cameron", "Ridley Scott"], answer: 1 },
+  { q: "Which video game franchise features the character 'Master Chief'?", options: ["Gears of War", "Destiny", "Halo", "Doom"], answer: 2 },
+  { q: "What is the best-selling video game of all time?", options: ["Tetris", "Minecraft", "GTA V", "Wii Sports"], answer: 1 },
+  { q: "Which band released the album 'Abbey Road'?", options: ["The Rolling Stones", "Pink Floyd", "Led Zeppelin", "The Beatles"], answer: 3 },
+  { q: "In what year was the first iPhone released?", options: ["2005", "2006", "2007", "2008"], answer: 2 },
+
+  // History
+  { q: "In what year did the Berlin Wall fall?", options: ["1987", "1989", "1991", "1990"], answer: 1 },
+  { q: "Who was the first person to walk on the Moon?", options: ["Buzz Aldrin", "Yuri Gagarin", "Neil Armstrong", "John Glenn"], answer: 2 },
+  { q: "Which ancient wonder was located in Alexandria?", options: ["Hanging Gardens", "Colossus", "Lighthouse", "Temple of Artemis"], answer: 2 },
+
+  // Random & Fun
+  { q: "What is the most spoken language in the world by native speakers?", options: ["English", "Spanish", "Mandarin Chinese", "Hindi"], answer: 2 },
+  { q: "How many hearts does an octopus have?", options: ["1", "2", "3", "4"], answer: 2 },
+  { q: "What is the rarest blood type?", options: ["O negative", "A positive", "AB negative", "B negative"], answer: 2 },
+  { q: "Which chess piece can only move diagonally?", options: ["Rook", "Knight", "Bishop", "Queen"], answer: 2 }
 ];
+
+/**
+ * How long a single trivia question stays open.
+ *
+ * Without this the round only advances when BOTH players answer, so one person
+ * who wanders off, loses signal or simply never picks freezes the game for the
+ * other one with no way forward. The clock is what makes it self-advancing.
+ */
+export const TRIVIA_QUESTION_MS = 20000;
 
 export function newTriviaGame(firstPlayerId, secondPlayerId) {
   // Pick 5 unique random questions
@@ -198,9 +198,36 @@ export function newTriviaGame(firstPlayerId, secondPlayerId) {
     currentIndex: 0,
     scores: { [firstPlayerId]: 0, [secondPlayerId]: 0 },
     answers: { [firstPlayerId]: null, [secondPlayerId]: null },
+    // Absolute time so every client counts down to the same instant rather
+    // than each starting its own drifting timer.
+    deadline: Date.now() + TRIVIA_QUESTION_MS,
     winner: null,
     finished: false
   };
+}
+
+/**
+ * Moves to the next question, or ends the game.
+ *
+ * Shared by both paths that can end a round — everyone answered, or the clock
+ * ran out — so the two can never disagree about scoring or when it finishes.
+ */
+function advanceTrivia(game) {
+  const ids = Object.keys(game.scores);
+
+  if (game.currentIndex + 1 < game.questions.length) {
+    game.currentIndex += 1;
+    for (const id of ids) game.answers[id] = null;
+    game.deadline = Date.now() + TRIVIA_QUESTION_MS;
+    return;
+  }
+
+  const [a, b] = ids;
+  game.winner = game.scores[a] === game.scores[b]
+    ? 'draw'
+    : (game.scores[a] > game.scores[b] ? a : b);
+  game.finished = true;
+  game.deadline = null;
 }
 
 export function submitTriviaAnswer(game, playerId, answerIndex) {
@@ -215,31 +242,35 @@ export function submitTriviaAnswer(game, playerId, answerIndex) {
     game.scores[playerId] = (game.scores[playerId] || 0) + 100;
   }
 
-  const partnerId = Object.keys(game.scores).find((id) => id !== playerId);
-  if (game.answers[partnerId] !== null) {
-    // Both players answered current question! Move to next or finish
-    if (game.currentIndex + 1 < game.questions.length) {
-      game.currentIndex += 1;
-      game.answers[playerId] = null;
-      game.answers[partnerId] = null;
-    } else {
-      // Game completed!
-      const scoreA = game.scores[playerId];
-      const scoreB = game.scores[partnerId];
-      if (scoreA === scoreB) {
-        game.winner = 'draw';
-      } else {
-        game.winner = scoreA > scoreB ? playerId : partnerId;
-      }
-      game.finished = true;
-    }
-  }
+  // Everyone has answered — move on without waiting for the clock.
+  const everyoneAnswered = Object.keys(game.scores)
+    .every((id) => game.answers[id] !== null);
+  if (everyoneAnswered) advanceTrivia(game);
 
   return { ok: true, game };
 }
 
+/**
+ * Called when a question's clock expires.
+ *
+ * Anyone who did not answer simply scores nothing for that question; a missed
+ * answer should cost the round, not the whole game.
+ */
+export function expireTriviaQuestion(game) {
+  if (!game || game.finished || game.type !== 'trivia') return { ok: false };
+  if (game.deadline && Date.now() < game.deadline - 250) return { ok: false };
+  advanceTrivia(game);
+  return { ok: true, game };
+}
+
 export function newDrawingGame(firstPlayerId, secondPlayerId) {
-  const WORDS = ["Sunset", "Robot", "Guitar", "Pizza", "Castle", "Rocket", "Dolphin", "Volcano", "Bicycle", "Dragon"];
+  const WORDS = [
+    "Sunset", "Robot", "Guitar", "Pizza", "Castle", "Rocket", "Dolphin",
+    "Volcano", "Bicycle", "Dragon", "Rainbow", "Lighthouse", "Astronaut",
+    "Penguin", "Tornado", "Spaceship", "Waterfall", "Crown", "Sword",
+    "Treasure", "Anchor", "Fireworks", "Cactus", "Jellyfish", "Snowflake",
+    "Compass", "Helicopter", "Skateboard", "Dinosaur", "Mermaid"
+  ];
   const randomWord = WORDS[Math.floor(Math.random() * WORDS.length)];
 
   return {
@@ -251,5 +282,67 @@ export function newDrawingGame(firstPlayerId, secondPlayerId) {
     finished: false
   };
 }
+
+export function newReflexGame(firstPlayerId, secondPlayerId) {
+  // Random delay before buzzer turns green (between 1800ms and 4500ms)
+  const delayMs = 1800 + Math.floor(Math.random() * 2700);
+  const triggerAt = Date.now() + delayMs;
+
+  return {
+    type: 'reflex',
+    round: 1,
+    maxRounds: 3,
+    triggerAt,
+    scores: { [firstPlayerId]: 0, [secondPlayerId]: 0 },
+    tapped: { [firstPlayerId]: null, [secondPlayerId]: null },
+    roundWinner: null,
+    winner: null,
+    finished: false
+  };
+}
+
+export function submitReflexBuzzer(game, playerId, clientTimestamp) {
+  if (!game || game.finished || game.type !== 'reflex') return { ok: false };
+  if (game.tapped[playerId] !== null) return { ok: false }; // already tapped this round
+
+  const now = Date.now();
+  const latency = now - game.triggerAt;
+
+  // If tapped BEFORE green trigger -> False start penalty
+  if (now < game.triggerAt) {
+    game.tapped[playerId] = -1; // false start
+  } else {
+    game.tapped[playerId] = Math.max(1, latency);
+  }
+
+  const partnerId = Object.keys(game.tapped).find((id) => id !== playerId);
+  
+  // If this was first valid tap or false start
+  if (game.tapped[playerId] > 0 && (game.tapped[partnerId] === null || game.tapped[partnerId] === -1)) {
+    game.roundWinner = playerId;
+    game.scores[playerId] = (game.scores[playerId] || 0) + 1;
+  } else if (game.tapped[playerId] === -1 && game.tapped[partnerId] !== -1) {
+    game.roundWinner = partnerId;
+    game.scores[partnerId] = (game.scores[partnerId] || 0) + 1;
+  }
+
+  // Check if round should conclude or next round should trigger
+  if (game.scores[playerId] >= 3) {
+    game.winner = playerId;
+    game.finished = true;
+  } else if (game.scores[partnerId] >= 3) {
+    game.winner = partnerId;
+    game.finished = true;
+  } else if (game.tapped[partnerId] !== null || game.roundWinner !== null) {
+    // Both tapped or round awarded, schedule next round trigger
+    game.round += 1;
+    game.tapped[playerId] = null;
+    game.tapped[partnerId] = null;
+    game.triggerAt = Date.now() + 2000 + Math.floor(Math.random() * 2500);
+  }
+
+  return { ok: true, game };
+}
+
 
 

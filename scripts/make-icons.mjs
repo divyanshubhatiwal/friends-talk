@@ -16,9 +16,9 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, 'public', 'icons');
 mkdirSync(outDir, { recursive: true });
 
-const BG = [7, 11, 20];          // --bg
-const ACCENT = [53, 224, 208];   // --accent
-const ACCENT2 = [91, 141, 255];  // --accent-2
+const BG = [15, 11, 13];          // --bg
+const ACCENT = [255, 122, 89];   // --accent
+const ACCENT2 = [255, 181, 71];  // --accent-2
 
 /** Relative bar heights, mirroring the visualiser in the app. */
 const BARS = [0.30, 0.55, 0.85, 1.0, 0.72, 0.45, 0.62, 0.35];

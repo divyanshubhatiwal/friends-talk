@@ -132,8 +132,26 @@ export class GroupRegistry {
     { id: 'lounge-midnight', name: 'Midnight Confessions', desc: 'Deep thoughts, late night philosophy, and safe venting', icon: '🌙', tags: ['deep', 'night', 'philosophy'] }
   ];
 
+  /** @type {Map<string, object>} custom user lounges */
+  customLounges = new Map();
+
+  createCustomLounge({ name, desc, icon = '✨', tags = [] }) {
+    const id = 'lounge-' + randomUUID().slice(0, 8);
+    const lounge = {
+      id,
+      name: String(name || 'Custom Lounge').slice(0, 40),
+      desc: String(desc || 'Open topic room').slice(0, 100),
+      icon: String(icon || '✨').slice(0, 4),
+      tags: Array.isArray(tags) ? tags.map(t => String(t).slice(0, 20)).slice(0, 5) : ['community'],
+      isCustom: true
+    };
+    this.customLounges.set(id, lounge);
+    return lounge;
+  }
+
   getLoungeList() {
-    return GroupRegistry.THEMED_LOUNGES.map((lounge) => {
+    const all = [...GroupRegistry.THEMED_LOUNGES, ...this.customLounges.values()];
+    return all.map((lounge) => {
       const room = this.rooms.get(lounge.id);
       return {
         ...lounge,
@@ -144,7 +162,7 @@ export class GroupRegistry {
   }
 
   joinLounge(loungeId, peer) {
-    const valid = GroupRegistry.THEMED_LOUNGES.find((l) => l.id === loungeId);
+    const valid = GroupRegistry.THEMED_LOUNGES.find((l) => l.id === loungeId) || this.customLounges.get(loungeId);
     if (!valid) return null;
 
     let room = this.rooms.get(loungeId);
@@ -165,4 +183,5 @@ export class GroupRegistry {
     return room;
   }
 }
+
 
