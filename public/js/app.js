@@ -46,6 +46,9 @@
   };
 
   let pc = null;
+  // Id of the stream carrying the partner's voice, fixed for the life of a
+  // call so a later screen-audio stream can never be mistaken for it.
+  let voiceStreamId = null;
   let localStream = null;
   let processedStream = null;
   let processedStreamDestination = null;
@@ -138,6 +141,7 @@
     screenBtn: $('btn-screen'), screenWrap: $('screen-wrap'), screenVideo: $('screen-video'),
     screenLabel: $('screen-label'), screenStop: $('screen-stop'), screenReport: $('screen-report'),
     screenFull: $('screen-full'), screenFullLabel: $('screen-full-label'),
+    screenSound: $('screen-sound'),
     screenMaximize: $('screen-maximize'),
     screenModal: $('screen-modal'), screenAskTitle: $('screen-ask-title'),
     screenAskBody: $('screen-ask-body'), screenAskAccept: $('screen-ask-accept'),
@@ -158,6 +162,8 @@
     pitchLockBtn: $('pitch-lock-btn'), pitchPMStatus: $('game-pm-status'),
 
     // Trivia Battle UI
+    gameEndBar: $('game-end-bar'), gameEndNote: $('game-end-note'),
+    gameAgain: $('game-again'), gamePick: $('game-pick'),
     triviaQNum: $('trivia-q-num'), triviaTimer: $('trivia-timer'),
     triviaScoreMe: $('trivia-score-me'), triviaScoreThem: $('trivia-score-them'),
     triviaQuestion: $('trivia-question'), triviaOptions: $('trivia-options'), triviaStatus: $('trivia-status'),
@@ -1630,15 +1636,31 @@
     };
 
     pc.ontrack = (event) => {
-      // The same connection now carries two kinds of track, so this can no
-      // longer assume everything arriving is the voice stream.
+      // The same connection can carry three things — the partner's voice, a
+      // shared screen, and that screen's sound — so nothing here may assume
+      // an incoming track is the voice.
       if (event.track.kind === 'video') {
         showRemoteScreen(new MediaStream([event.track]));
         event.track.addEventListener('ended', hideRemoteScreen);
         return;
       }
-      el.remote.srcObject = event.streams[0];
-      el.remote.play().catch(() => { /* autoplay policy — user gesture already happened */ });
+
+      /*
+       * Audio: the first stream to arrive is the voice, and it stays the voice.
+       * A screen's sound arrives later on a different stream. Without this
+       * check it would be routed to the voice player and replace the partner
+       * — they would go silent the moment they shared a video with sound.
+       */
+      const stream = event.streams[0];
+      if (!voiceStreamId || stream?.id === voiceStreamId) {
+        voiceStreamId = stream?.id || voiceStreamId;
+        el.remote.srcObject = stream;
+        el.remote.play().catch(() => { /* autoplay policy — user gesture already happened */ });
+        return;
+      }
+
+      playScreenAudio(new MediaStream([event.track]));
+      event.track.addEventListener('ended', stopScreenAudio);
     };
 
     pc.onconnectionstatechange = () => {
@@ -1662,7 +1684,9 @@
     pc.onconnectionstatechange = null;
     pc.close();
     pc = null;
+    voiceStreamId = null;
     el.remote.srcObject = null;
+    stopScreenAudio();
   }
 
   async function startOffer() {
@@ -1719,7 +1743,41 @@
    * saying yes.
    */
   let screenStream = null;
-  let screenSender = null;
+  let screenSenders = [];   // video, and audio when the share includes sound
+
+  /*
+   * The shared screen's sound plays through its own element, separate from
+   * the partner's voice, so either can be stopped or muted without touching
+   * the other.
+   */
+  const screenAudio = new Audio();
+  screenAudio.autoplay = true;
+
+  function playScreenAudio(stream) {
+    screenAudio.srcObject = stream;
+    screenAudio.muted = false;
+    screenAudio.play().catch(() => { /* a click already happened during the call */ });
+    el.screenSound.hidden = false;
+    paintScreenSound();
+  }
+
+  function stopScreenAudio() {
+    screenAudio.pause();
+    screenAudio.srcObject = null;
+    if (el.screenSound) el.screenSound.hidden = true;
+  }
+
+  function paintScreenSound() {
+    const on = !screenAudio.muted;
+    el.screenSound.textContent = on ? '🔊 Sound' : '🔇 Muted';
+    el.screenSound.setAttribute('aria-pressed', String(on));
+    el.screenSound.title = on ? "Mute the shared screen's sound" : "Unmute the shared screen's sound";
+  }
+
+  el.screenSound.addEventListener('click', () => {
+    screenAudio.muted = !screenAudio.muted;
+    paintScreenSound();
+  });
   let watchingScreen = false;
 
   /**
@@ -1788,7 +1846,28 @@
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: 12 },   // plenty for a document, far cheaper than 30
-        audio: false
+        /*
+         * Sound from the shared tab or screen. Voice processing is switched off
+         * because it is built for speech: echo cancellation and noise
+         * suppression would mangle music and the soundtrack of a video.
+         */
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          // The sharer keeps hearing their own tab.
+          suppressLocalAudioPlayback: false
+        },
+        // Offer whole-system sound where the browser supports it (Chrome on
+        // Windows and ChromeOS), not just a single tab.
+        systemAudio: 'include',
+        /*
+         * Keep this page's own output out of the capture. System sound includes
+         * the partner's voice coming out of the speakers, and without this they
+         * would hear themselves echoed back. Browsers that do not know the
+         * option ignore it.
+         */
+        restrictOwnAudio: true
       });
     } catch {
       toast('Screen share cancelled');
@@ -1796,15 +1875,24 @@
       return;
     }
 
-    const [track] = screenStream.getVideoTracks();
+    const [video] = screenStream.getVideoTracks();
+    const [audio] = screenStream.getAudioTracks();
     // Stopping from the browser's own "stop sharing" bar must tear down too.
-    track.addEventListener('ended', () => stopSharing('browser'));
+    video.addEventListener('ended', () => stopSharing('browser'));
 
-    screenSender = pc.addTrack(track, screenStream);
+    // Both tracks go on screenStream, so the receiver can tell the screen's
+    // sound apart from the voice by which stream it belongs to.
+    screenSenders = [pc.addTrack(video, screenStream)];
+    if (audio) screenSenders.push(pc.addTrack(audio, screenStream));
     await renegotiate();
 
     showLocalScreen();
-    toast('Sharing your screen', 'ok');
+    // Sound is opt-in inside the browser's picker, and easy to miss — say so,
+    // rather than letting someone share a video in silence and not know why.
+    toast(audio
+      ? 'Sharing your screen with sound'
+      : 'Sharing without sound — to include it, share again and tick "Share audio" in the picker',
+      audio ? 'ok' : '');
   });
 
   /**
@@ -1823,12 +1911,16 @@
   async function stopSharing(reason) {
     if (!screenStream) return;
     for (const track of screenStream.getTracks()) track.stop();
-    if (screenSender && pc) {
-      try { pc.removeTrack(screenSender); } catch { /* connection already gone */ }
+    if (screenSenders.length && pc) {
+      // Video and sound both, or the sound would keep streaming after the
+      // picture was gone.
+      for (const sender of screenSenders) {
+        try { pc.removeTrack(sender); } catch { /* connection already gone */ }
+      }
       await renegotiate();
     }
     screenStream = null;
-    screenSender = null;
+    screenSenders = [];
     hideLocalScreen();
     socket.emit('screen:stopped');
     if (reason !== 'teardown') toast('Stopped sharing your screen');
@@ -1883,6 +1975,8 @@
 
   function hideRemoteScreen() {
     watchingScreen = false;
+    // Their sound goes with their picture, whichever way the share ended.
+    stopScreenAudio();
     if (screenStream) return showLocalScreen(); // ours is still going
     el.screenWrap.hidden = true;
     el.screenVideo.srcObject = null;
@@ -3128,7 +3222,66 @@
     triviaCountdownTimer = setInterval(paint, 250);
   }
 
+  /*
+   * The end-of-game bar, shared by every game.
+   *
+   * One bar rather than a button per game, because the drawing game never
+   * finishes at all — a per-game "play again" would simply never appear there.
+   * For drawing it offers a fresh word instead, at any point in the round.
+   */
+  let lastGameType = 'tic-tac-toe';
+  let gameEndTimer = null;
+
+  function hideGameEndBar() {
+    if (gameEndTimer) clearInterval(gameEndTimer);
+    gameEndTimer = null;
+    el.gameEndBar.hidden = true;
+  }
+
+  function paintGameEndBar(payload) {
+    hideGameEndBar();
+
+    if (payload.finished) {
+      el.gameAgain.textContent = '↻ Play again';
+      el.gameEndBar.hidden = false;
+      // Count down to the server's automatic return to the picker, so the
+      // panel changing on its own is never a surprise.
+      if (payload.resetInMs) {
+        const returnsAt = Date.now() + payload.resetInMs;
+        const tick = () => {
+          const left = Math.max(0, Math.ceil((returnsAt - Date.now()) / 1000));
+          el.gameEndNote.textContent = `Back to the games in ${left}s`;
+          if (!left) hideGameEndBar();
+        };
+        tick();
+        gameEndTimer = setInterval(tick, 500);
+      } else {
+        el.gameEndNote.textContent = 'Round over';
+      }
+      return;
+    }
+
+    if (payload.type === 'drawing') {
+      el.gameAgain.textContent = '↻ New word';
+      el.gameEndNote.textContent = '';
+      el.gameEndBar.hidden = false;
+    }
+  }
+
+  // Either player can restart, and the new round reaches both of them.
+  el.gameAgain.addEventListener('click', () => {
+    hideGameEndBar();
+    socket.emit('game:start', { gameType: lastGameType });
+  });
+
+  el.gamePick.addEventListener('click', () => {
+    hideGameEndBar();
+    showGamePicker();
+  });
+
   function renderBoard(payload) {
+    lastGameType = payload.type || 'tic-tac-toe';
+    paintGameEndBar(payload);
     el.gameWrap.hidden = false;
     el.gameSelectPane.hidden = true;
     el.gameTTTPane.hidden = true;
@@ -3308,6 +3461,7 @@
     el.gameDrawPane.hidden = true;
     if (el.gameReflexPane) el.gameReflexPane.hidden = true;
     stopTriviaCountdown();
+    hideGameEndBar();
   }
 
   el.game.addEventListener('click', () => {
@@ -3321,8 +3475,11 @@
    * back to pick another game.
    */
   socket.on('game:closed', () => {
+    // Someone who already chose "Pick another game" is on the picker; telling
+    // them again that the game is over would just be noise.
+    const alreadyPicking = !el.gameWrap.hidden && !el.gameSelectPane.hidden;
     showGamePicker();
-    toast('Game over — pick another');
+    if (!alreadyPicking) toast('Game over — pick another');
   });
 
   el.gameSelectTTT.addEventListener('click', () => {

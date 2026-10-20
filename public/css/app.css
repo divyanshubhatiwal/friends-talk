@@ -1553,6 +1553,49 @@ details.more summary {
   border: 1px solid rgba(255, 122, 89, 0.25);
 }
 
+/* End-of-game bar, shared by every game. Sits under whichever game is open. */
+.game-end-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-bright);
+  background: var(--bg-raised);
+}
+.game-end-note {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.game-end-actions { display: flex; gap: 8px; margin-left: auto; }
+.game-end-btn {
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.game-end-btn:hover { color: var(--text); border-color: var(--border-bright); }
+.game-end-btn.primary {
+  background: var(--grad-cyber);
+  border-color: transparent;
+  color: #1a0f0b;
+}
+@media (max-width: 760px) {
+  .game-end-btn { min-height: 44px; }
+  .game-end-actions { width: 100%; }
+  .game-end-btn { flex: 1; }
+}
+
 /* Question clock. Shares the badge shape so it reads as part of the header,
    and turns warm in the last few seconds without shifting the layout. */
 .trivia-timer {

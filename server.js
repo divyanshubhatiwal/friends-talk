@@ -1443,8 +1443,13 @@ function leaveRoom(socket, reason) {
  */
 const gameTimers = new Map();
 
-/** How long a finished game stays on screen before returning to the picker. */
-const GAME_RESET_MS = 6000;
+/**
+ * How long a finished game stays on screen before returning to the picker.
+ *
+ * Long enough to read the result and press "Play again" — at six seconds the
+ * panel could disappear while someone was still reaching for the button.
+ */
+const GAME_RESET_MS = 15000;
 
 function clearGameTimer(roomId) {
   const timer = gameTimers.get(roomId);

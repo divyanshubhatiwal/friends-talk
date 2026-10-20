@@ -465,6 +465,7 @@
           <span id="screen-label">Screen</span>
           <div class="screen-actions">
             <button class="screen-btn danger" id="screen-report" hidden>Report</button>
+            <button class="screen-btn" id="screen-sound" hidden aria-pressed="true" title="Mute the shared screen's sound">🔊 Sound</button>
             <button class="screen-btn" id="screen-full" title="Fullscreen" aria-label="Enter fullscreen">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>
@@ -593,6 +594,15 @@
             </button>
           </div>
           <p class="reflex-latency" id="reflex-latency">Fastest tap wins the round!</p>
+        </div>
+
+        <!-- Shared by every game: replay or pick another once a round is over. -->
+        <div class="game-end-bar" id="game-end-bar" hidden>
+          <span class="game-end-note" id="game-end-note"></span>
+          <div class="game-end-actions">
+            <button class="game-end-btn primary" id="game-again" type="button">↻ Play again</button>
+            <button class="game-end-btn" id="game-pick" type="button">Pick another game</button>
+          </div>
         </div>
       </div>
 
