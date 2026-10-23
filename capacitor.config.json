@@ -2,17 +2,23 @@
   "appId": "live.friendstalk.app",
   "appName": "Friends Talk",
   "webDir": "www",
+  "backgroundColor": "#0f0b0d",
   "ios": {
     "contentInset": "always",
     "limitsNavigationsToAppBoundDomains": false,
-    "backgroundColor": "#070b14"
+    "backgroundColor": "#0f0b0d"
+  },
+  "android": {
+    "backgroundColor": "#0f0b0d",
+    "allowMixedContent": false
   },
   "server": {
-    "iosScheme": "https"
+    "iosScheme": "https",
+    "androidScheme": "https"
   },
   "plugins": {
     "SplashScreen": {
-      "backgroundColor": "#070b14",
+      "backgroundColor": "#0f0b0d",
       "showSpinner": false,
       "launchAutoHide": true
     }

@@ -9,12 +9,15 @@
     "dev": "node --watch --env-file-if-exists=.env server.js",
     "build:native": "node scripts/build-native.mjs",
     "ios:sync": "npx cap sync ios",
-    "ios:open": "npx cap open ios"
+    "ios:open": "npx cap open ios",
+    "android:sync": "npm run build:native && npx cap sync android",
+    "android:apk": "npm run android:sync && cd android && gradlew assembleDebug"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@capacitor/ios": "^8.5.0",

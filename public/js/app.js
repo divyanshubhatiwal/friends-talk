@@ -1078,6 +1078,9 @@
     if (!('serviceWorker' in navigator)) return;
     // A service worker needs a secure context; localhost counts as one.
     if (!window.isSecureContext) return;
+    // The native app ships its files inside the package; a cache would only
+    // risk serving an old copy after an update.
+    if (window.FRIENDSTALK?.isNative) return;
 
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch((error) => {
@@ -1381,7 +1384,8 @@
     // Try the AI-powered endpoint first — it generates interest-tailored prompts
     try {
       const query = interests && interests.length ? `?interests=${encodeURIComponent(interests.join(','))}` : '';
-      const res = await fetch(`/api/icebreaker${query}`);
+      // Absolute in the native app, which has no server at its own origin.
+      const res = await fetch(`${window.FRIENDSTALK?.serverUrl || ''}/api/icebreaker${query}`);
       const data = await res.json();
       if (data.ok && data.icebreakers) {
         activeIcebreakers = data.icebreakers

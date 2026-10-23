@@ -20,23 +20,16 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const www = path.join(root, 'www');
 
-const serverUrl = process.env.IOS_SERVER_URL || '';
-
-if (!serverUrl) {
-  console.error(
-    '\nIOS_SERVER_URL is not set.\n\n' +
-    'A native build has no server at its own origin, so it must be told where\n' +
-    'the deployed backend lives. Without this the app installs, opens, and then\n' +
-    'fails to connect to anything.\n\n' +
-    '  IOS_SERVER_URL=https://friendstalk.example.com npm run build:native\n'
-  );
-  process.exit(1);
-}
+// A native build has no server at its own origin, so it must be told where the
+// deployed backend lives. Defaults to the production site; override with
+// NATIVE_SERVER_URL (IOS_SERVER_URL is still honoured) for a staging server.
+const serverUrl = (process.env.NATIVE_SERVER_URL || process.env.IOS_SERVER_URL ||
+  'https://friendstalk.fun').replace(/\/+$/, '');
 
 if (!serverUrl.startsWith('https://')) {
   console.error(
-    `\nIOS_SERVER_URL must be https:// — got "${serverUrl}".\n\n` +
-    'iOS App Transport Security blocks cleartext HTTP, and getUserMedia\n' +
+    `\nNATIVE_SERVER_URL must be https:// — got "${serverUrl}".\n\n` +
+    'Both platforms block cleartext HTTP by default, and getUserMedia\n' +
     'requires a secure context. A plain http:// origin will not work on device.\n'
   );
   process.exit(1);
@@ -72,6 +65,10 @@ app = app.replace('/socket.io/socket.io.js', '/js/vendor/socket.io.min.js');
 // marketing links would strand a user inside the app with no way back.
 app = app.replace('<a class="brand" href="/">', '<a class="brand" href="#" onclick="return false">');
 
+// The web server adds ".html" for /terms and /privacy; the app's built-in file
+// server does not, so the legal links must name the file.
+app = app.replaceAll('href="/terms"', 'href="/terms.html"').replaceAll('href="/privacy"', 'href="/privacy.html"');
+
 await writeFile(path.join(www, 'index.html'), app);
 await rm(appPath);
 
@@ -85,4 +82,4 @@ console.log(`Built ${path.relative(root, www)}/ for native packaging`);
 console.log(`  server:     ${serverUrl}`);
 console.log('  entry:      index.html (the app)');
 console.log('  socket.io:  vendored locally');
-console.log('\nNext (macOS only):  npx cap sync ios  &&  npx cap open ios');
+console.log('\nNext:  npx cap sync android   (or, on macOS, npx cap sync ios)');

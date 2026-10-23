@@ -47,9 +47,15 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 const httpServer = createServer(app);
+// The native apps load their pages from inside the app, not from this server,
+// so they arrive cross-origin: Android's WebView as https://localhost and
+// iOS as capacitor://localhost. Those two are allowed; any other website
+// embedding this backend is still refused, as before.
+const APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost']);
+
 const io = new Server(httpServer, {
   maxHttpBufferSize: 4e6, // room for a screened image
-  cors: { origin: false }
+  cors: { origin: [...APP_ORIGINS] }
 });
 
 const matchmaker = new Matchmaker();
@@ -144,6 +150,16 @@ function buildIceServers() {
 
 app.disable('x-powered-by');
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+
+// Same rule for the two public read-only API routes the app calls with fetch.
+app.use(['/api/stats', '/api/icebreaker'], (req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && APP_ORIGINS.has(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+  }
+  next();
+});
 
 app.get('/api/stats', (_req, res) => {
   res.json(stats());

@@ -8,7 +8,7 @@
 //   node scripts/make-icons.mjs
 
 import { deflateSync } from 'node:zlib';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,13 +31,15 @@ function lerp(a, b, t) {
   ];
 }
 
-function drawIcon(size, { maskable = false } = {}) {
+function drawIcon(size, { maskable = false, foreground = false } = {}) {
   const px = Buffer.alloc(size * size * 4);
 
   // Maskable icons get cropped to a circle by the launcher, so the artwork has
-  // to sit inside a safe zone of roughly the middle 80%.
-  const inset = maskable ? size * 0.12 : 0;
-  const radius = maskable ? 0 : size * 0.22;
+  // to sit inside a safe zone of roughly the middle 80%. An Android adaptive
+  // foreground is stricter still: only the middle 66 of 108 units is
+  // guaranteed visible, and the background is drawn separately.
+  const inset = foreground ? size * 0.22 : maskable ? size * 0.12 : 0;
+  const radius = maskable || foreground ? 0 : size * 0.22;
 
   const set = (x, y, [r, g, b], a = 255) => {
     const i = (y * size + x) * 4;
@@ -55,7 +57,7 @@ function drawIcon(size, { maskable = false } = {}) {
           continue;
         }
       }
-      set(x, y, BG);
+      set(x, y, BG, foreground ? 0 : 255);
     }
   }
 
@@ -147,4 +149,25 @@ for (const t of targets) {
   const png = encodePng(t.size, drawIcon(t.size, { maskable: t.maskable }));
   writeFileSync(path.join(outDir, t.name), png);
   console.log('wrote', t.name, `(${t.size}x${t.size}, ${(png.length / 1024).toFixed(1)}KB)`);
+}
+
+// Android launcher icons, once `npx cap add android` has created the project.
+// Legacy square/round icons for old launchers, plus the adaptive foreground
+// that Android 8+ masks into whatever shape the phone uses.
+const androidRes = path.join(root, 'android', 'app', 'src', 'main', 'res');
+if (existsSync(androidRes)) {
+  const densities = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+  for (const [density, scale] of Object.entries(densities)) {
+    const dir = path.join(androidRes, `mipmap-${density}`);
+    mkdirSync(dir, { recursive: true });
+    const legacy = Math.round(48 * scale);
+    const adaptive = Math.round(108 * scale);
+    writeFileSync(path.join(dir, 'ic_launcher.png'), encodePng(legacy, drawIcon(legacy)));
+    writeFileSync(path.join(dir, 'ic_launcher_round.png'), encodePng(legacy, drawIcon(legacy, { maskable: true })));
+    writeFileSync(path.join(dir, 'ic_launcher_foreground.png'), encodePng(adaptive, drawIcon(adaptive, { foreground: true })));
+  }
+  const hex = '#' + BG.map((v) => v.toString(16).padStart(2, '0')).join('');
+  writeFileSync(path.join(androidRes, 'values', 'ic_launcher_background.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">${hex}</color>\n</resources>\n`);
+  console.log('wrote Android launcher icons (5 densities, adaptive + legacy)');
 }
