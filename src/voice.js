@@ -17,11 +17,15 @@
 // null and the caller carries on with captions disabled — a missing API key
 // must never stop two people from talking.
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Overridable for a regional endpoint, a proxy, or a local stand-in in tests.
+const GEMINI_URL = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models';
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+// Chosen on measured latency (~2 s), which matters more than price for live
+// captions: the "lite" models took 20-30 s under load in October 2026.
+// gemini-2.0-flash, the previous default, has been retired.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const TRANSCRIBE_MODEL = process.env.TRANSCRIBE_MODEL || 'whisper-1';
 const TRANSLATE_MODEL = process.env.TRANSLATE_MODEL || 'gpt-4o-mini';
 
@@ -162,15 +166,16 @@ async function geminiText(prompt) {
 /**
  * Google issues two credential shapes and they do not authenticate the same way.
  *
- *   AIza…   a long-lived API key, sent as a ?key= query parameter
- *   AQ.… / ya29.…  a short-lived OAuth access token, sent as a Bearer header
+ *   AIza… / AQ.…  an API key (AI Studio now issues the AQ. form too), sent as
+ *                 a ?key= query parameter
+ *   ya29.…        a short-lived OAuth access token, sent as a Bearer header
  *
  * Sending one in the other's position fails with a 401 that looks exactly like
  * a bad key, so the shape is detected rather than assumed.
  */
 export function geminiAuth() {
   const key = (process.env.GEMINI_API_KEY || '').trim();
-  const isApiKey = /^AIza[\w-]{10,}$/.test(key);
+  const isApiKey = !key.startsWith('ya29.');
   return isApiKey
     ? { query: `?key=${encodeURIComponent(key)}`, headers: {} }
     : { query: '', headers: { Authorization: `Bearer ${key}` } };

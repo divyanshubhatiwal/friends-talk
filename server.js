@@ -40,6 +40,7 @@ import * as store from './src/storage/repository.js';
 import * as push from './src/push.js';
 import { limiters } from './src/ratelimit.js';
 import { pickPrompt, pickTruthOrDare } from './src/prompts.js';
+import { openSession as openLiveSession, PERSONAS, MAX_SESSION_MS as AI_MAX_SESSION_MS } from './src/live.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -242,7 +243,9 @@ io.on('connection', (socket) => {
     voiceStrikes: 0,
     notifyWhenOnline: false,
     mood: null,
-    captionLog: []
+    captionLog: [],
+    ai: null,          // live session with an AI partner
+    translator: null   // live session interpreting the human partner
   };
   peers.set(socket.id, peer);
 
@@ -256,6 +259,12 @@ io.on('connection', (socket) => {
     // nothing when switched on.
     voiceFeatures: voiceAvailable(),
     languages: LANGUAGES,
+    // Personas for the AI partner; empty when no speech provider is working.
+    aiPersonas: voiceAvailable() && voiceProvider() === 'gemini'
+      ? Object.fromEntries(Object.entries(PERSONAS).map(([key, p]) =>
+        [key, { name: p.name, emoji: p.emoji, label: p.label }]))
+      : {},
+    aiMaxMs: AI_MAX_SESSION_MS,
     // Not a secret: the browser needs this to create a push subscription.
     pushKey: push.publicKey()
   });
@@ -300,6 +309,7 @@ io.on('connection', (socket) => {
     }
     leaveRoom(socket, 'searching');
     matchmaker.dequeue(socket.id);
+    peer.ai?.end();
 
     peer.mode = payload.mode === 'text' ? 'text' : 'voice';
     peer.countries = toArray(payload.countries).map(sanitizeCountry).slice(0, 8);
@@ -444,6 +454,112 @@ io.on('connection', (socket) => {
     socket.emit('idle');
     broadcastStats();
   });
+
+  // ------------------------------------------------------------ AI partner
+
+  /**
+   * A voice conversation with an AI persona.
+   *
+   * The browser streams 16 kHz PCM from the microphone; replies come back as
+   * 24 kHz PCM. What the user says is transcribed by the model and screened
+   * with the same rules as chat, so the AI partner is not a loophole.
+   */
+  socket.on('ai:start', (payload = {}) => {
+    if (!limiters.liveStart.allow(socket.id)) return;
+    if (!peer.ageConfirmed) return socket.emit('ai:end', { reason: 'age_not_confirmed' });
+    if (!voiceAvailable() || voiceProvider() !== 'gemini') return socket.emit('ai:end', { reason: 'unavailable' });
+    if (rooms.forSocket(socket.id) || groups.roomOf(socket.id)) return socket.emit('ai:end', { reason: 'in_call' });
+
+    matchmaker.dequeue(socket.id);
+    peer.ai?.end();
+
+    const personaKey = PERSONAS[payload.persona] ? payload.persona : 'friend';
+    let session = null;
+    session = openLiveSession({ kind: 'chat', persona: personaKey }, {
+      onReady: () => socket.emit('ai:ready', { persona: personaKey, maxMs: AI_MAX_SESSION_MS }),
+      onAudio: (pcm) => socket.emit('ai:audio', pcm),
+      onInterrupted: () => socket.emit('ai:interrupted'),
+      onTurnComplete: () => socket.emit('ai:turn'),
+      onTranscript: (dir, text) => {
+        if (dir === 'in') {
+          const check = screenText(text);
+          if (check.verdict === VERDICT.BLOCK) {
+            socket.emit('voice:warning', { reason: check.reason, strikes: 0, limit: VOICE_STRIKE_LIMIT });
+            session?.end();
+            return;
+          }
+        }
+        socket.emit('ai:transcript', { from: dir === 'in' ? 'me' : 'ai', text });
+      },
+      onEnd: (reason) => {
+        if (peer.ai === session) peer.ai = null;
+        socket.emit('ai:end', { reason });
+      }
+    });
+
+    if (!session) return socket.emit('ai:end', { reason: 'busy' });
+    peer.ai = session;
+    broadcastStats();
+  });
+
+  socket.on('ai:audio', (chunk) => {
+    if (!limiters.liveAudio.allow(socket.id)) return;
+    peer.ai?.sendAudio(chunk);
+  });
+
+  socket.on('ai:stop', () => peer.ai?.end());
+
+  // ------------------------------------------------------- live translation
+
+  /**
+   * Re-speaks the human partner's voice in the listener's language.
+   *
+   * The listener's browser sends what it *receives* from the partner — the
+   * partner's own microphone never changes. The partner is always told, since
+   * their voice is now going to an AI service.
+   */
+  socket.on('translate:start', (payload = {}) => {
+    if (!limiters.liveStart.allow(socket.id)) return;
+    const partnerId = rooms.partnerOf(socket.id);
+    if (!partnerId) return socket.emit('translate:end', { reason: 'no_call' });
+    if (!voiceAvailable() || voiceProvider() !== 'gemini') return socket.emit('translate:end', { reason: 'unavailable' });
+    const target = LANGUAGES[payload.target] ? payload.target : null;
+    if (!target) return socket.emit('translate:end', { reason: 'bad_language' });
+
+    peer.translator?.end();
+    let session = null;
+    session = openLiveSession({ kind: 'translate', target }, {
+      onReady: () => {
+        socket.emit('translate:ready', { target });
+        const still = rooms.partnerOf(socket.id);
+        if (still) io.to(still).emit('translate:notice', { on: true, language: LANGUAGES[target] });
+      },
+      onAudio: (pcm) => socket.emit('tr:audio', pcm),
+      onInterrupted: () => socket.emit('tr:interrupted'),
+      onTurnComplete: () => {},
+      onTranscript: (dir, text) => {
+        // Only the translated side is useful as a caption; the source is
+        // already shown by regular captions if both people turned them on.
+        if (dir === 'out') socket.emit('tr:caption', { text });
+      },
+      onEnd: (reason) => {
+        if (peer.translator === session) peer.translator = null;
+        socket.emit('translate:end', { reason });
+        const still = rooms.partnerOf(socket.id);
+        if (still) io.to(still).emit('translate:notice', { on: false });
+      }
+    });
+
+    if (!session) return socket.emit('translate:end', { reason: 'busy' });
+    peer.translator = session;
+  });
+
+  socket.on('tr:audio', (chunk) => {
+    if (!limiters.liveAudio.allow(socket.id)) return;
+    peer.translator?.sendAudio(chunk);
+  });
+
+  socket.on('translate:stop', () => peer.translator?.end());
 
   // ------------------------------------------------------------ group rooms
 
@@ -1192,6 +1308,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    peer.ai?.end();
+    peer.translator?.end();
     matchmaker.dequeue(socket.id);
     leaveRoom(socket, 'disconnected');
     leaveGroup(socket, 'disconnected');
@@ -1414,6 +1532,10 @@ function leaveRoom(socket, reason) {
   // A pending question clock or reset timer would otherwise outlive the room
   // it belongs to and fire against nothing.
   clearGameTimer(room.id);
+
+  // Interpreters are tied to the call: nobody keeps paying to translate a
+  // partner who has gone.
+  for (const m of members) m.translator?.end();
 
   rooms.destroy(room.id);
   if (partnerId) {

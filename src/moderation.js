@@ -98,7 +98,7 @@ async function screenImageWithGemini(dataUrl) {
   const [, mime, payload] = match;
 
   try {
-    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
     const auth = geminiAuth();
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent${auth.query}`,

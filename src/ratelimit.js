@@ -54,5 +54,9 @@ export const limiters = {
   voiceClip: createLimiter({ maxPerWindow: 20, windowMs: 60_000 }),
   reaction:  createLimiter({ maxPerWindow: 30, windowMs: 60_000 }),
   jamNote:   createLimiter({ maxPerWindow: 60, windowMs: 60_000 }),
-  prompt:    createLimiter({ maxPerWindow: 6,  windowMs: 60_000 })
+  prompt:    createLimiter({ maxPerWindow: 6,  windowMs: 60_000 }),
+  // Starting an AI or translation session opens a billed upstream connection.
+  liveStart: createLimiter({ maxPerWindow: 6,  windowMs: 60_000 }),
+  // ~10 audio chunks a second while talking, with headroom for jitter.
+  liveAudio: createLimiter({ maxPerWindow: 900, windowMs: 60_000 })
 };

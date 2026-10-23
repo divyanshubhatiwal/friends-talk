@@ -328,8 +328,39 @@
         <button class="quick-link" type="button" data-open="panel-filters"><span aria-hidden="true">🎯</span> Interests &amp; mood</button>
         <button class="quick-link" type="button" data-open="panel-lounges"><span aria-hidden="true">🏠</span> Topic rooms</button>
         <button class="quick-link" type="button" data-open="panel-friends"><span aria-hidden="true">⭐</span> Friends</button>
+        <button class="quick-link quick-ai" type="button" id="ai-open" hidden><span aria-hidden="true">🤖</span> Talk to AI</button>
       </div>
+      <!-- Offered after a while in an empty queue, so nobody stares at a spinner. -->
+      <button class="ai-offer" type="button" id="ai-offer" hidden>
+        <span aria-hidden="true">🤖</span> Nobody yet? Talk to an AI while you wait <span aria-hidden="true">→</span>
+      </button>
       <p class="kbd-hint" id="kbd-hint">Tip: press <kbd>Space</kbd> to call, <kbd>Esc</kbd> to close panels.</p>
+
+      <!-- AI partner: pick a persona, then a voice conversation with it. -->
+      <div class="ai-call" id="ai-call" hidden>
+        <div class="ai-pick" id="ai-pick">
+          <h2 class="ai-pick-title">Talk to an AI</h2>
+          <p class="ai-pick-sub">Practise a language, argue about anything, or just chat. It's an AI, not a person, and nothing is saved.</p>
+          <div class="persona-grid" id="persona-grid"></div>
+          <button class="btn btn-ghost btn-sm" type="button" id="ai-cancel">Back</button>
+        </div>
+        <div class="ai-live" id="ai-live" hidden>
+          <div class="ai-orb" id="ai-orb"><span id="ai-emoji">🤖</span></div>
+          <div class="ai-name"><span id="ai-name">AI</span> <span class="ai-tag">AI</span></div>
+          <div class="ai-state" id="ai-state" aria-live="polite">Connecting…</div>
+          <div class="ai-transcript" id="ai-transcript" aria-live="polite"></div>
+          <div class="ai-actions">
+            <button class="ai-btn" type="button" id="ai-mute" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0"/>
+              </svg>
+              <span id="ai-mute-label">Mute</span>
+            </button>
+            <button class="ai-btn danger" type="button" id="ai-end">End</button>
+          </div>
+          <p class="ai-foot"><span id="ai-timer"></span> · Headphones work best</p>
+        </div>
+      </div>
 
       <!-- Only rendered during a call — an idle screen shows none of this. -->
       <div class="controls" id="controls" hidden>
@@ -430,6 +461,21 @@
               <button class="sound-opt" data-sound="rimshot">🔔 Rimshot</button>
               <button class="sound-opt" data-sound="scratch">📀 Scratch</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Live voice translation: hear the other person in your language. -->
+        <div class="overflow" id="translate-wrap" hidden>
+          <button class="ctrl" id="btn-translate" data-label="Translate" title="Hear them in your language" aria-label="Live voice translation" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 8h8M9 5v3M7 8c0 4 3 7 6 8M11 8c-1 3-4 6-7 7M13 21l4-10 4 10M14.5 18h5"/>
+            </svg>
+          </button>
+          <div class="menu translate-menu" id="translate-menu" hidden>
+            <span class="group-label">Hear them in</span>
+            <select id="translate-target" aria-label="Translate their voice into"></select>
+            <button class="btn btn-gradient btn-sm" type="button" id="translate-toggle">Start translating</button>
+            <p class="hint">AI re-speaks their voice in your language, a second or two behind. They will be told.</p>
           </div>
         </div>
 
@@ -822,6 +868,7 @@
 
 <script src="/js/config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/live-audio.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>

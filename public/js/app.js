@@ -2709,7 +2709,21 @@
     // Hidden outright where the browser cannot capture a screen, rather than
     // offered and then failing when pressed.
     el.screenBtn.hidden = inGroup || state.mode === 'text' || !screenSupported();
+    // Translation needs a human voice to translate: one-to-one voice calls.
+    $('translate-wrap').hidden = !(live && !inGroup && state.mode !== 'text' && state.aiAvailable);
     if (!live) closeMenus();
+
+    // An empty queue for a while: offer the AI partner instead of a spinner.
+    // Repaints while searching must not restart the clock.
+    if (!searching) {
+      clearTimeout(state.aiOfferTimer);
+      state.aiOfferTimer = null;
+      $('ai-offer').hidden = true;
+    } else if (state.aiAvailable && !state.aiOfferTimer) {
+      state.aiOfferTimer = setTimeout(() => {
+        if (state.phase === 'searching') $('ai-offer').hidden = false;
+      }, 10000);
+    }
 
     el.chatInput.disabled = !live;
     el.send.disabled = !live;
@@ -2720,6 +2734,8 @@
   }
 
   el.callBtn.addEventListener('click', () => {
+    // Space still "clicks" the hidden call button while the AI panel is up.
+    if (document.body.dataset.ai) return;
     if (state.phase === 'idle') {
       return el.mode.value === 'group' ? startGroup() : startSearch();
     }
@@ -3626,6 +3642,286 @@
 
   socket.on('lounges:list', (list) => renderLounges(list));
 
+  // -------------------------------------------------------------- AI partner
+
+  /**
+   * A voice conversation with an AI persona, for an empty queue or practice.
+   *
+   * It runs entirely beside the call machinery rather than inside it: the
+   * phase stays 'idle', and body[data-ai] swaps the stage over to the AI panel.
+   * Ending an AI chat therefore can never leave a half-torn-down human call.
+   */
+  const ai = { personas: {}, maxMs: 0, active: false, ready: false, persona: null,
+    stream: null, capture: null, player: null, deadline: 0, tick: null, lastFrom: null, line: null };
+  const aiEl = {
+    open: $('ai-open'), offer: $('ai-offer'), call: $('ai-call'), pick: $('ai-pick'),
+    grid: $('persona-grid'), cancel: $('ai-cancel'), live: $('ai-live'), orb: $('ai-orb'),
+    emoji: $('ai-emoji'), name: $('ai-name'), status: $('ai-state'), transcript: $('ai-transcript'),
+    mute: $('ai-mute'), muteLabel: $('ai-mute-label'), end: $('ai-end'), timer: $('ai-timer')
+  };
+
+  const AI_END_MESSAGES = {
+    time_limit: 'Time is up for this AI chat. Start another any time.',
+    busy: 'The AI partner is busy right now. Try again in a minute.',
+    unavailable: 'The AI partner is not available right now.',
+    in_call: 'Finish your call first.',
+    closed: 'The AI chat was disconnected.'
+  };
+
+  function renderPersonas() {
+    aiEl.grid.textContent = '';
+    for (const [key, p] of Object.entries(ai.personas)) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'persona-card';
+      btn.innerHTML = `<span class="persona-emoji" aria-hidden="true">${escapeHtml(p.emoji)}</span>` +
+        `<span class="persona-name">${escapeHtml(p.name)}</span>` +
+        `<span class="persona-label">${escapeHtml(p.label)}</span>`;
+      btn.addEventListener('click', () => startAi(key));
+      aiEl.grid.appendChild(btn);
+    }
+  }
+
+  function openAiPicker() {
+    if (state.phase === 'searching') {
+      socket.emit('cancel');
+      state.phase = 'idle';
+      paintPhase();
+    }
+    if (state.phase !== 'idle') return;
+    closeSheets();
+    document.body.dataset.ai = 'pick';
+    aiEl.call.hidden = false;
+    aiEl.pick.hidden = false;
+    aiEl.live.hidden = true;
+  }
+
+  function closeAi() {
+    stopAiAudio();
+    delete document.body.dataset.ai;
+    aiEl.call.hidden = true;
+  }
+
+  function stopAiAudio() {
+    if (ai.active) socket.emit('ai:stop');
+    ai.active = false;
+    ai.ready = false;
+    ai.capture?.close();
+    ai.player?.close();
+    ai.stream?.getTracks().forEach((t) => t.stop());
+    ai.capture = ai.player = ai.stream = null;
+    clearInterval(ai.tick);
+    aiEl.orb.classList.remove('is-speaking');
+  }
+
+  async function startAi(key) {
+    const p = ai.personas[key];
+    if (!p) return;
+    ai.persona = p;
+    document.body.dataset.ai = 'live';
+    aiEl.pick.hidden = true;
+    aiEl.live.hidden = false;
+    aiEl.emoji.textContent = p.emoji;
+    aiEl.name.textContent = p.name;
+    aiEl.status.textContent = 'Connecting…';
+    aiEl.transcript.textContent = '';
+    aiEl.timer.textContent = '';
+    ai.lastFrom = null;
+    setAiMuted(false);
+
+    // Created inside the click, before any await, so the browser lets it play.
+    ai.player = FTLive.player({
+      onSpeaking(on) {
+        aiEl.orb.classList.toggle('is-speaking', on);
+        if (ai.ready) aiEl.status.textContent = on ? `${p.name} is talking…` : 'Listening… just speak';
+        // Its own voice leaking back into the mic must not count as the user
+        // interrupting it; a deliberate cut-in is louder and still gets through.
+        ai.capture?.setGate(on ? 0.12 : 0);
+      }
+    });
+
+    try {
+      ai.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      ai.capture = await FTLive.capture(ai.stream, (buf) => {
+        if (ai.active) socket.emit('ai:audio', buf);
+      });
+    } catch {
+      toast('Allow the microphone to talk to the AI', 'err');
+      stopAiAudio();
+      return openAiPicker();
+    }
+    ai.active = true;
+    socket.emit('ai:start', { persona: key });
+  }
+
+  function setAiMuted(muted) {
+    ai.muted = muted;
+    ai.capture?.setMuted(muted);
+    aiEl.mute.setAttribute('aria-pressed', String(muted));
+    aiEl.mute.classList.toggle('is-active', muted);
+    aiEl.muteLabel.textContent = muted ? 'Unmute' : 'Mute';
+  }
+
+  function addAiLine(from, text) {
+    if (from !== ai.lastFrom || !ai.line) {
+      ai.line = document.createElement('p');
+      ai.line.className = 'ai-line ' + from;
+      aiEl.transcript.appendChild(ai.line);
+      ai.lastFrom = from;
+      while (aiEl.transcript.children.length > 6) aiEl.transcript.firstChild.remove();
+    }
+    ai.line.textContent += text;
+    aiEl.transcript.scrollTop = aiEl.transcript.scrollHeight;
+  }
+
+  aiEl.open.addEventListener('click', openAiPicker);
+  aiEl.offer.addEventListener('click', openAiPicker);
+  aiEl.cancel.addEventListener('click', closeAi);
+  aiEl.end.addEventListener('click', closeAi);
+  aiEl.mute.addEventListener('click', () => setAiMuted(!ai.muted));
+
+  socket.on('ai:ready', () => {
+    ai.ready = true;
+    aiEl.status.textContent = 'Listening… just speak';
+    ai.deadline = Date.now() + (ai.maxMs || 600000);
+    clearInterval(ai.tick);
+    const paint = () => { aiEl.timer.textContent = `${formatDuration(ai.deadline - Date.now())} left`; };
+    paint();
+    ai.tick = setInterval(paint, 1000);
+  });
+  socket.on('ai:audio', (buf) => ai.player?.play(buf));
+  socket.on('ai:interrupted', () => ai.player?.flush());
+  socket.on('ai:turn', () => { ai.lastFrom = null; });
+  socket.on('ai:transcript', ({ from, text }) => { if (ai.active) addAiLine(from, text); });
+  socket.on('ai:end', ({ reason } = {}) => {
+    const wasActive = ai.active;
+    ai.active = false; // the server already closed it; do not send ai:stop
+    stopAiAudio();
+    if (AI_END_MESSAGES[reason]) toast(AI_END_MESSAGES[reason], reason === 'time_limit' ? '' : 'err');
+    if (!wasActive || reason === 'ended') return;
+    if (reason === 'unavailable' || reason === 'in_call') closeAi();
+    else openAiPicker();
+  });
+
+  // -------------------------------------------------------- live translation
+
+  /**
+   * Hear the other person in your own language.
+   *
+   * What gets translated is the audio this browser *receives* — the partner's
+   * microphone and connection are untouched, and only the listener who turned
+   * it on hears the result. Their original voice is turned down, not off, so
+   * tone and laughter still come through under the translation.
+   */
+  const tr = { on: false, pending: false, capture: null, player: null, text: '', lastAt: 0, volume: 1 };
+  const trEl = {
+    wrap: $('translate-wrap'), btn: $('btn-translate'), menu: $('translate-menu'),
+    target: $('translate-target'), toggle: $('translate-toggle')
+  };
+
+  function paintTranslate() {
+    const busy = tr.on || tr.pending;
+    trEl.btn.classList.toggle('is-active', tr.on);
+    trEl.btn.setAttribute('aria-pressed', String(tr.on));
+    trEl.toggle.textContent = tr.on ? 'Stop translating' : tr.pending ? 'Connecting…' : 'Start translating';
+    trEl.toggle.disabled = tr.pending;
+    trEl.target.disabled = busy;
+  }
+
+  async function startTranslate() {
+    const stream = el.remote.srcObject;
+    if (!stream || !stream.getAudioTracks().length) {
+      toast('Their voice has not connected yet', 'err');
+      return;
+    }
+    const target = trEl.target.value;
+    store.write('translateVoiceTo', target);
+    tr.pending = true;
+    paintTranslate();
+    tr.player = FTLive.player();
+    try {
+      tr.capture = await FTLive.capture(stream, (buf) => {
+        if (tr.on || tr.pending) socket.emit('tr:audio', buf);
+      });
+    } catch {
+      stopTranslate(false);
+      toast('This browser cannot translate audio', 'err');
+      return;
+    }
+    socket.emit('translate:start', { target });
+  }
+
+  function stopTranslate(tellServer) {
+    if (tellServer && (tr.on || tr.pending)) socket.emit('translate:stop');
+    if (tr.on) el.remote.volume = tr.volume;
+    tr.on = tr.pending = false;
+    tr.capture?.close();
+    tr.player?.close();
+    tr.capture = tr.player = null;
+    tr.text = '';
+    paintTranslate();
+  }
+
+  trEl.btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = trEl.menu.hidden;
+    closeMenus();
+    trEl.menu.hidden = !open;
+  });
+  trEl.toggle.addEventListener('click', () => {
+    if (tr.on) stopTranslate(true);
+    else if (!tr.pending) startTranslate();
+  });
+
+  socket.on('translate:ready', ({ target }) => {
+    tr.pending = false;
+    tr.on = true;
+    tr.volume = el.remote.volume;
+    el.remote.volume = 0.2;
+    paintTranslate();
+    closeMenus();
+    toast(`Translating into ${trEl.target.selectedOptions[0]?.textContent || target}`);
+  });
+  socket.on('tr:audio', (buf) => { if (tr.on) tr.player?.play(buf); });
+  socket.on('tr:caption', ({ text }) => {
+    if (!tr.on) return;
+    // Fragments of one sentence arrive separately; a pause starts a new line.
+    if (Date.now() - tr.lastAt > 2500) tr.text = '';
+    tr.lastAt = Date.now();
+    tr.text = (tr.text + text).slice(-220);
+    el.captionThem.textContent = '🌐 ' + tr.text.trim();
+    el.captionBar.hidden = false;
+  });
+  socket.on('translate:end', ({ reason } = {}) => {
+    const was = tr.on || tr.pending;
+    stopTranslate(false);
+    if (!was) return;
+    if (reason === 'busy') toast('Translation is busy right now. Try again shortly.', 'err');
+    else if (reason === 'unavailable') toast('Live translation is not available right now', 'err');
+    else if (reason === 'time_limit') toast('Translation stopped after its time limit. Turn it on again to continue.');
+  });
+  socket.on('translate:notice', ({ on, language } = {}) => {
+    systemMessage(on
+      ? `They turned on live translation: an AI is re-speaking your voice in ${language} for them.`
+      : 'They turned off live translation.');
+  });
+
+  socket.on('ready', (payload) => {
+    ai.personas = payload.aiPersonas || {};
+    ai.maxMs = payload.aiMaxMs || 0;
+    state.aiAvailable = Boolean(window.FTLive?.supported) && Object.keys(ai.personas).length > 0;
+    aiEl.open.hidden = !state.aiAvailable;
+    renderPersonas();
+
+    const languages = payload.languages || {};
+    trEl.target.textContent = '';
+    for (const [code, label] of Object.entries(languages)) trEl.target.add(new Option(label, code));
+    trEl.target.value = store.read('translateVoiceTo', guessLanguage(languages));
+    paintTranslate();
+  });
+
   // ---------------------------------------------------------- socket events
 
   socket.on('ready', (payload) => {
@@ -3925,7 +4221,7 @@
 
   // Welcome-screen shortcuts into the sidebar: switch to the tab, and on
   // phones also slide the sheet up, since the sidebar is otherwise hidden.
-  for (const link of document.querySelectorAll('.quick-link')) {
+  for (const link of document.querySelectorAll('.quick-link[data-open]')) {
     link.addEventListener('click', () => {
       document.querySelector(`.tab[data-panel="${link.dataset.open}"]`)?.click();
       if (getComputedStyle(paneLeft).position === 'absolute' &&
@@ -3957,6 +4253,7 @@
     el.moreBtn.setAttribute('aria-expanded', 'false');
     el.modifierMenu.hidden = true;
     el.soundboardMenu.hidden = true;
+    $('translate-menu').hidden = true;
   }
 
   el.moreBtn.addEventListener('click', (event) => {
