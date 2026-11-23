@@ -2885,3 +2885,18 @@ body[data-ai] .ai-offer { display: none !important; }
 .translate-menu select { width: 100%; }
 .translate-menu .btn { width: 100%; text-align: center; }
 .translate-menu .hint { font-size: 0.74rem; margin: 0; }
+
+/* ------------------------------------------------ iPhone install steps */
+.install-steps {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.45;
+}
+.ios-share {
+  display: inline-flex;
+  vertical-align: -3px;
+  color: #0a84ff;
+}

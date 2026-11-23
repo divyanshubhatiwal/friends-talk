@@ -1717,8 +1717,15 @@ function sanitizeCountry(value) {
   return /^[A-Z]{2}$/.test(str) ? str : 'XX';
 }
 
-await store.init();
-startSweep();
+// Accept visitors first. Everything below used to run before this and held
+// every cold start hostage — the database connection alone can take 18 s to
+// fail, and the speech-key check another 9 s. Storage already falls back to
+// memory while the database is not connected, and the voice features report
+// themselves available until the check says otherwise, so nothing needs to
+// wait for either.
+httpServer.listen(PORT, () => {
+  console.log(`Friends Talk listening on http://localhost:${PORT}`);
+});
 
 console.log(
   push.init()
@@ -1726,21 +1733,17 @@ console.log(
     : 'Push: no VAPID keys — notifications are OFF. Generate them with scripts/make-vapid.mjs.'
 );
 
-// Check the credential before announcing the feature, so the log tells the
-// truth about what this process can actually do.
-await voiceVerify();
+store.init().then(startSweep);
 
-if (voiceAvailable()) {
-  console.log(`Voice: captions, translation, and spoken-word moderation enabled via ${voiceProvider()}.`);
-} else if (voiceProvider()) {
-  console.warn(
-    `Voice: a ${voiceProvider()} key is set but ${voiceReason()} — ` +
-    'captions and spoken-word moderation are OFF. Everything else works normally.'
-  );
-} else {
-  console.log('Voice: no GEMINI_API_KEY or OPENAI_API_KEY — captions and spoken-word moderation are OFF.');
-}
-
-httpServer.listen(PORT, () => {
-  console.log(`Friends Talk listening on http://localhost:${PORT}`);
+voiceVerify().then(() => {
+  if (voiceAvailable()) {
+    console.log(`Voice: captions, translation, and spoken-word moderation enabled via ${voiceProvider()}.`);
+  } else if (voiceProvider()) {
+    console.warn(
+      `Voice: a ${voiceProvider()} key is set but ${voiceReason()} — ` +
+      'captions and spoken-word moderation are OFF. Everything else works normally.'
+    );
+  } else {
+    console.log('Voice: no GEMINI_API_KEY or OPENAI_API_KEY — captions and spoken-word moderation are OFF.');
+  }
 });

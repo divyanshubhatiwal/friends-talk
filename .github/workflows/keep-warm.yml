@@ -1,0 +1,34 @@
+# Keeps friendstalk.fun awake.
+#
+# Render's free plan puts the server to sleep after 15 minutes without a
+# visitor, and the next person then waits 30-60 seconds for it to boot. A
+# request every 10 minutes means it never reaches 15 idle minutes.
+#
+# Free for a public repository. Two limits to know about:
+#   - GitHub may start scheduled runs a few minutes late under load.
+#   - GitHub pauses schedules in repos with no commits for 60 days; any push,
+#     or "Run workflow" on the Actions tab, turns it back on.
+# One always-on free service uses ~744 of Render's 750 free hours a month, so
+# this only fits if it is the only free service on the Render account.
+# On a paid Render plan the server never sleeps and this file can be deleted.
+
+name: Keep server warm
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /healthz
+        run: |
+          curl --fail --silent --show-error \
+               --retry 3 --retry-delay 10 --retry-all-errors \
+               --max-time 90 \
+               https://friendstalk.fun/healthz

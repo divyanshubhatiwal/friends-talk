@@ -53,6 +53,10 @@ export function provider() {
  */
 const health = { checked: false, ok: false, reason: null };
 
+// HTTP status of the most recent provider call, so the boot check can tell a
+// rejected key apart from a provider that is merely busy.
+let lastStatus = null;
+
 export function isAvailable() {
   if (provider() === null) return false;
   return health.checked ? health.ok : true;
@@ -69,15 +73,25 @@ export async function verify() {
     return health;
   }
 
+  lastStatus = null;
   try {
     const reply = provider() === 'gemini'
       ? await geminiText('Reply with exactly: OK')
       : await openaiTranslate('Reply with exactly: OK', 'OK');
-    Object.assign(health, reply
-      ? { checked: true, ok: true, reason: null }
-      : { checked: true, ok: false, reason: 'the provider rejected the credential' });
+    // Only a definite "no" about the key turns the features off. A busy (503)
+    // or slow provider says nothing about the credential, and disabling
+    // captions and the AI partner for the life of the process over a moment
+    // of load — which happened — is far worse than one failed request later.
+    const rejected = !reply && [400, 401, 403].includes(lastStatus);
+    Object.assign(health, rejected
+      ? { checked: true, ok: false, reason: 'the provider rejected the credential' }
+      : { checked: true, ok: true, reason: null });
+    if (!reply && !rejected) {
+      console.warn(`Voice: key check inconclusive (${lastStatus ?? 'no response'}); leaving voice features on.`);
+    }
   } catch (error) {
-    Object.assign(health, { checked: true, ok: false, reason: error.message });
+    Object.assign(health, { checked: true, ok: true, reason: null });
+    console.warn(`Voice: key check failed (${error.message}); leaving voice features on.`);
   }
   return health;
 }
@@ -193,6 +207,7 @@ async function geminiCall(body) {
         signal: AbortSignal.timeout(12000)
       }
     );
+    lastStatus = res.status;
 
     if (!res.ok) {
       // Surface the reason once rather than failing silently forever — a wrong
@@ -274,6 +289,7 @@ async function openaiTranslate(instruction, text) {
       }),
       signal: AbortSignal.timeout(8000)
     });
+    lastStatus = res.status;
 
     if (!res.ok) return null;
     const body = await res.json();

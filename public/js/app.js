@@ -1104,7 +1104,18 @@
       el.installBtn.hidden = false;
     });
 
+    // iPhone and iPad (iPadOS reports itself as a Mac with a touchscreen).
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+    const iosModal = $('ios-install-modal');
+    $('ios-install-close').addEventListener('click', () => iosModal.close());
+    if (isIOS && !window.FRIENDSTALK?.isNative) el.installBtn.hidden = false;
+
     el.installBtn.addEventListener('click', async () => {
+      if (isIOS) {
+        iosModal.showModal();
+        return;
+      }
       if (!installPrompt) return;
       installPrompt.prompt();
       const { outcome } = await installPrompt.userChoice;
